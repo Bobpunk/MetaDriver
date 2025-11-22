@@ -121,15 +121,15 @@
             
             <div class="grid grid-cols-3 gap-2">
                 <div class="relative group">
-                    <input type="text" id="uberInput" placeholder="0" class="input-dark w-full rounded-lg pt-4 pb-1 px-0.5 text-center font-bold text-sm h-10 focus:ring-1 ring-white">
+                    <input type="text" id="uberInput" inputmode="numeric" placeholder="0" class="input-dark w-full rounded-lg pt-4 pb-1 px-0.5 text-center font-bold text-sm h-10 focus:ring-1 ring-white">
                     <span class="absolute top-0.5 left-0 w-full text-center text-[8px] text-gray-400 uppercase font-bold pointer-events-none">Uber</span>
                 </div>
                 <div class="relative group">
-                    <input type="text" id="ninenineInput" placeholder="0" class="input-dark w-full rounded-lg pt-4 pb-1 px-0.5 text-center font-bold text-sm h-10 focus:ring-1 ring-yellow-500">
+                    <input type="text" id="ninenineInput" inputmode="numeric" placeholder="0" class="input-dark w-full rounded-lg pt-4 pb-1 px-0.5 text-center font-bold text-sm h-10 focus:ring-1 ring-yellow-500">
                     <span class="absolute top-0.5 left-0 w-full text-center text-[8px] text-yellow-500/80 uppercase font-bold pointer-events-none">99Pop</span>
                 </div>
                 <div class="relative group">
-                    <input type="text" id="tipsInput" placeholder="0" class="input-dark w-full rounded-lg pt-4 pb-1 px-0.5 text-center font-bold text-sm h-10 focus:ring-1 ring-emerald-500">
+                    <input type="text" id="tipsInput" inputmode="numeric" placeholder="0" class="input-dark w-full rounded-lg pt-4 pb-1 px-0.5 text-center font-bold text-sm h-10 focus:ring-1 ring-emerald-500">
                     <span class="absolute top-0.5 left-0 w-full text-center text-[8px] text-emerald-500/80 uppercase font-bold pointer-events-none">Extra</span>
                 </div>
             </div>
@@ -226,7 +226,11 @@
 
         const allInputs = Object.values(els).filter(el => el.tagName === 'INPUT');
         allInputs.forEach(input => {
-            input.addEventListener('input', () => {
+            input.addEventListener('input', (e) => {
+                // Bloqueia letras, mas permite números, ponto, vírgula e sinal de mais (+)
+                if (['uberInput', 'ninenineInput', 'tipsInput'].includes(input.id)) {
+                    input.value = input.value.replace(/[^0-9+.,]/g, '');
+                }
                 saveData();
                 calculate();
             });

@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MetaDriver - Compacto</title>
     
+    <!-- Meta Tags para Previsão de Link (Open Graph) - Sem Imagem -->
+    <meta property="og:title" content="MetaDriver - Seu Copiloto de Lucros">
+    <meta property="og:description" content="Controle seus ganhos de Uber/99, calcule combustível e atinja sua meta diária com precisão.">
+    <meta property="og:type" content="website">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
@@ -144,16 +149,23 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2">
-            <div class="bg-slate-800/50 rounded-lg p-2 border border-red-900/20 flex flex-col justify-center items-center">
-                <div class="text-[9px] text-red-400 uppercase font-bold">Gasolina</div>
-                <div class="text-sm font-bold text-red-400" id="fuelCostDisplay">R$ 0,00</div>
+        <div class="flex flex-col gap-2 w-full">
+            <div class="grid grid-cols-2 gap-2">
+                <div class="bg-slate-800/50 rounded-lg p-2 border border-red-900/20 flex flex-col justify-center items-center">
+                    <div class="text-[9px] text-red-400 uppercase font-bold">Gasolina</div>
+                    <div class="text-sm font-bold text-red-400" id="fuelCostDisplay">R$ 0,00</div>
+                </div>
+                
+                <div class="bg-slate-800/50 rounded-lg p-2 border border-blue-900/20 flex flex-col justify-center items-center">
+                    <div class="text-[9px] text-blue-400 uppercase font-bold">Hora Bruta</div>
+                    <div class="text-sm font-bold text-white" id="hourlyRateDisplay">R$ 0,00</div>
+                </div>
             </div>
-            
-            <!-- Dashboard alterado: Hora Bruta -->
-            <div class="bg-slate-800/50 rounded-lg p-2 border border-blue-900/20 flex flex-col justify-center items-center">
-                <div class="text-[9px] text-blue-400 uppercase font-bold">Hora Bruta</div>
-                <div class="text-sm font-bold text-white" id="hourlyRateDisplay">R$ 0,00</div>
+
+            <!-- Novo Campo: Valor do KM -->
+            <div class="bg-slate-800/50 rounded-lg p-2 border border-purple-900/20 flex flex-col justify-center items-center">
+                <div class="text-[9px] text-purple-400 uppercase font-bold">Valor do KM</div>
+                <div class="text-sm font-bold text-purple-400" id="kmValueDisplay">R$ 0,00</div>
             </div>
         </div>
 
@@ -206,10 +218,11 @@
             tips: document.getElementById('tipsInput'),
             
             // Displays
-            grossHeader: document.getElementById('grossHeaderDisplay'), // Novo display header
+            grossHeader: document.getElementById('grossHeaderDisplay'), 
             netIncome: document.getElementById('netIncomeDisplay'),
-            hourlyRate: document.getElementById('hourlyRateDisplay'), // Alterado de grossTotal para hourlyRate
+            hourlyRate: document.getElementById('hourlyRateDisplay'), 
             fuelCost: document.getElementById('fuelCostDisplay'),
+            kmValue: document.getElementById('kmValueDisplay'), // Novo Display
             elapsed: document.getElementById('elapsedTime'),
             finish: document.getElementById('estimatedFinish'),
             progress: document.getElementById('progressBar'),
@@ -316,15 +329,19 @@
             const workedM = Math.floor(diffMins % 60);
 
             // 4. Updates na UI
-            els.grossHeader.textContent = fmtMoney(gross); // Exibe Bruto no Header
-            els.netIncome.textContent = fmtMoney(netIncome); // Exibe Líquido no Header
+            els.grossHeader.textContent = fmtMoney(gross); 
+            els.netIncome.textContent = fmtMoney(netIncome); 
             els.fuelCost.textContent = fmtMoney(fuelCost);
             els.elapsed.textContent = `${workedH}h ${workedM.toString().padStart(2,'0')}m`;
 
             // Hora Bruta
             const hourlyGross = hoursDec > 0 ? (gross / hoursDec) : 0;
-            els.hourlyRate.textContent = fmtMoney(hourlyGross); // Exibe Hora Bruta no Dashboard
+            els.hourlyRate.textContent = fmtMoney(hourlyGross); 
             
+            // Novo: Valor do KM
+            const kmValue = km > 0 ? (gross / km) : 0;
+            els.kmValue.textContent = fmtMoney(kmValue);
+
             // 5. Previsão e Meta
             const goal = parseFloat(els.goal.value) || 0;
             const remaining = goal - gross;

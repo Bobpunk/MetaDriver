@@ -1,0 +1,49 @@
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&display=swap');
+        
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #0f172a; 
+            color: #e2e8f0; 
+            touch-action: manipulation; 
+        } 
+        
+        .card { 
+            background-color: #1e293b; 
+            border: 1px solid #334155; 
+        }
+        
+        .input-dark { 
+            background-color: #334155; 
+            border-color: #475569; 
+            color: white; 
+            transition: all 0.2s; 
+        }
+        
+        .input-dark:focus { 
+            outline: none; 
+            box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4); 
+            border-color: #38bdf8; 
+            background-color: #475569;
+        }
+
+        .logo-box {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border: 1px solid #334155;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .brand-text {
+            font-family: 'Inter', sans-serif;
+            letter-spacing: -0.05em;
+        }
+
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+   

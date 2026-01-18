@@ -5,7 +5,7 @@ const PopupManager = {
     // ⚙️ CONFIGURAÇÃO DE TEMPO (Preencha o que precisar)
     // ======================================================
     CONFIG_TEMPO: {
-        HORAS: 0,      // Quantas horas?
+        HORAS: 12,      // Quantas horas?
         MINUTOS: 0,     // Quantos minutos?
         SEGUNDOS: 0     // Quantos segundos?
     },

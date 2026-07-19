@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "pro" boolean DEFAULT false NOT NULL;

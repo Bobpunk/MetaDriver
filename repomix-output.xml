@@ -1,0 +1,2306 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+public/
+  og-metadriver.png
+src/
+  app/
+    api/
+      auth/
+        login/
+          route.ts
+        logout/
+          route.ts
+        me/
+          route.ts
+        register/
+          route.ts
+      subscribe/
+        route.ts
+    login/
+      page.tsx
+    globals.css
+    layout.tsx
+    page.tsx
+  components/
+    CampaignModal.tsx
+    ClientLayout.tsx
+    DriverDashboard.tsx
+    HelpModal.tsx
+    ShareButton.tsx
+  contexts/
+    AuthContext.tsx
+  db/
+    index.ts
+    schema.ts
+  hooks/
+    useTimedPopup.ts
+  lib/
+    auth.ts
+    campaign.ts
+    driver.ts
+    types.ts
+.eslintrc.json
+.gitignore
+drizzle.config.ts
+next.config.mjs
+package.json
+postcss.config.mjs
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/app/api/auth/login/route.ts">
+import { NextResponse } from "next/server";
+import {
+  signToken,
+  getCredentials,
+  findUserByEmail,
+  verifyPassword,
+} from "@/lib/auth";
+
+export async function POST(request: Request) {
+  try {
+    const { email, password } = await request.json();
+
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: "E-mail e senha são obrigatórios." },
+        { status: 400 }
+      );
+    }
+
+    const emailLower = email.toLowerCase();
+
+    // 1. Tenta login como admin via env vars
+    const creds = getCredentials();
+    if (emailLower === creds.email && password === creds.password) {
+      const adminUser = { email: emailLower, name: "Administrador" };
+      const token = await signToken(adminUser);
+      return respondWithCookie(token, adminUser);
+    }
+
+    // 2. Tenta login no banco
+    const user = await findUserByEmail(emailLower);
+    if (!user) {
+      return NextResponse.json(
+        { error: "E-mail ou senha inválidos." },
+        { status: 401 }
+      );
+    }
+
+    const match = await verifyPassword(password, user.password);
+    if (!match) {
+      return NextResponse.json(
+        { error: "E-mail ou senha inválidos." },
+        { status: 401 }
+      );
+    }
+
+    const token = await signToken({ email: user.email, name: user.name });
+    return respondWithCookie(token, { email: user.email, name: user.name });
+  } catch {
+    return NextResponse.json(
+      { error: "Erro interno do servidor." },
+      { status: 500 }
+    );
+  }
+}
+
+function respondWithCookie(
+  token: string,
+  user: { email: string; name: string }
+) {
+  const response = NextResponse.json({ token, user });
+  response.cookies.set("session", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 7,
+    path: "/",
+  });
+  return response;
+}
+</file>
+
+<file path="src/app/api/auth/logout/route.ts">
+import { NextResponse } from "next/server";
+
+export async function POST() {
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set("session", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 0,
+    path: "/",
+  });
+  return response;
+}
+</file>
+
+<file path="src/app/api/auth/me/route.ts">
+// src/app/api/auth/me/route.ts
+import { NextResponse } from "next/server";
+import { verifyToken } from "@/lib/auth";
+
+export async function GET(request: Request) {
+  // 1. Next.js já parseia os cookies nativamente para você
+  const cookieStore = request.cookies;
+  const token = cookieStore.get("session")?.value;
+
+  if (!token) {
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
+  const user = await verifyToken(token);
+
+  if (!user) {
+    return NextResponse.json(
+      { error: "Sessão inválida ou expirada." },
+      { status: 401 }
+    );
+  }
+
+  return NextResponse.json({ user });
+}
+</file>
+
+<file path="src/app/api/auth/register/route.ts">
+import { NextResponse } from "next/server";
+import { findUserByEmail, createUser, signToken } from "@/lib/auth";
+
+export async function POST(request: Request) {
+  try {
+    const { email, password, name } = await request.json();
+
+    if (!email || !password || !name) {
+      return NextResponse.json(
+        { error: "Nome, e-mail e senha são obrigatórios." },
+        { status: 400 }
+      );
+    }
+
+    const emailLower = email.toLowerCase();
+    if (!emailLower.includes("@") || emailLower.length < 5) {
+      return NextResponse.json(
+        { error: "E-mail inválido." },
+        { status: 400 }
+      );
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json(
+        { error: "A senha deve ter no mínimo 8 caracteres." },
+        { status: 400 }
+      );
+    }
+
+    if (!/[A-Z]/.test(password)) {
+      return NextResponse.json(
+        { error: "A senha deve conter pelo menos uma letra maiúscula." },
+        { status: 400 }
+      );
+    }
+
+    if (!/[0-9]/.test(password)) {
+      return NextResponse.json(
+        { error: "A senha deve conter pelo menos um número." },
+        { status: 400 }
+      );
+    }
+
+    if (name.trim().length < 2) {
+      return NextResponse.json(
+        { error: "O nome deve ter no mínimo 2 caracteres." },
+        { status: 400 }
+      );
+    }
+
+    const existing = await findUserByEmail(emailLower);
+    if (existing) {
+      return NextResponse.json(
+        { error: "Este e-mail já está cadastrado." },
+        { status: 409 }
+      );
+    }
+
+    const user = await createUser(emailLower, password, name.trim());
+
+    const token = await signToken({
+      email: user.email,
+      name: user.name,
+    });
+
+    const response = NextResponse.json({
+      token,
+      user: { email: user.email, name: user.name },
+    });
+
+    response.cookies.set("session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7,
+      path: "/",
+    });
+
+    return response;
+  } catch (err) {
+    console.error("Erro no registro:", err);
+    return NextResponse.json(
+      { error: "Erro interno do servidor." },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="src/app/api/subscribe/route.ts">
+import { NextResponse } from "next/server";
+import { db } from "@/db";
+import { emails } from "@/db/schema";
+import { sql } from "drizzle-orm";
+
+export async function POST(request: Request) {
+  try {
+    const { email, name, message, origin } = await request.json();
+
+    if (!email || email.length < 5 || !email.includes("@")) {
+      return NextResponse.json(
+        { error: "E-mail inválido." },
+        { status: 400 }
+      );
+    }
+
+    await db
+      .insert(emails)
+      .values({
+        email,
+        name: name || null,
+        message: message || null,
+        origin: origin || "web",
+      })
+      .onConflictDoNothing({ target: emails.email })
+      .execute();
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("Erro ao salvar email:", err);
+    return NextResponse.json(
+      { error: "Erro interno do servidor." },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="src/app/login/page.tsx">
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+
+export default function LoginPage() {
+  const { login, user, loading } = useAuth();
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!loading && user) router.push("/");
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen w-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-400 text-sm font-bold">Carregando...</div>
+      </div>
+    );
+  }
+
+  if (user) return null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    const result = await login(email, password);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error || "Erro ao fazer login.");
+    } else {
+      router.push("/");
+    }
+  }
+
+  return (
+    <div className="min-h-screen w-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center border border-slate-700 shadow-lg mx-auto mb-4">
+            <i className="fas fa-bullseye text-blue-500 text-2xl" />
+          </div>
+          <h1 className="text-2xl font-black text-white tracking-tight">
+            META<span className="text-blue-500">DRIVER</span>
+          </h1>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            Acesse sua conta
+          </p>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="bg-slate-800 rounded-xl p-6 shadow-lg border border-slate-700/50 space-y-4"
+        >
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-xs text-red-400 font-bold text-center">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+              E-mail
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seu@email.com"
+              required
+              autoComplete="email"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white text-sm focus:border-blue-500 outline-none transition-colors placeholder-slate-600"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">
+              Senha
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white text-sm focus:border-blue-500 outline-none transition-colors placeholder-slate-600"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-3 rounded-lg shadow-lg active:scale-95 transition-all disabled:opacity-60"
+          >
+            {busy ? (
+              <span className="flex items-center justify-center gap-2">
+                <i className="fas fa-spinner fa-spin" /> ENTRANDO...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <i className="fas fa-lock" /> ENTRAR
+              </span>
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/app/globals.css">
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  font-family: var(--font-sans);
+}
+
+body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+  touch-action: manipulation;
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes pulse-slow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2.5s ease-in-out infinite;
+}
+
+.shadow-glow {
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.6);
+}
+</file>
+
+<file path="src/app/layout.tsx">
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
+import ClientLayout from "@/components/ClientLayout";
+import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "600", "800", "900"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const SITE_URL = "https://metadriver.vercel.app/";
+
+export const metadata: Metadata = {
+  title: "MetaDriver | Seu Copiloto de Lucros",
+  description:
+    "Defina sua meta, controle a gasolina e veja seu Lucro Líquido em tempo real. A ferramenta essencial para motoristas profissionais.",
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    title: "MetaDriver | Pare de rodar no escuro 🚀",
+    description:
+      "Defina sua meta, controle a gasolina e veja seu Lucro Líquido em tempo real. A ferramenta essencial para motoristas profissionais.",
+    images: [
+      {
+        url: `${SITE_URL}og-metadriver.png`,
+        type: "image/png",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "MetaDriver | Seu Copiloto de Lucros",
+    description:
+      "Controle total dos seus ganhos e gastos. Saiba quanto você realmente lucrou hoje.",
+    images: [`${SITE_URL}og-metadriver.png`],
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="pt-BR" className={inter.variable}>
+      <body className="font-sans antialiased">
+        <link
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+          rel="stylesheet"
+        />
+        <ClientLayout>{children}</ClientLayout>
+      </body>
+    </html>
+  );
+}
+</file>
+
+<file path="src/app/page.tsx">
+"use client";
+
+import { DriverDashboard } from "@/components/DriverDashboard";
+
+export default function Home() {
+  return (
+    <main className="min-h-screen w-screen pb-10 overflow-y-auto">
+      <DriverDashboard />
+    </main>
+  );
+}
+</file>
+
+<file path="src/components/CampaignModal.tsx">
+"use client";
+
+import { useEffect, useState } from "react";
+import { QRCodeCanvas } from "qrcode.react";
+import { CAMPAIGN_CONFIG, MILESTONES } from "@/lib/campaign";
+
+type Step = "invite" | "payment";
+
+export function CampaignModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [step, setStep] = useState<Step>("invite");
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setStep("invite");
+      setVisible(true);
+    } else {
+      setVisible(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (target.dataset.backdrop === "campaign") onClose();
+    }
+    if (open) document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const pct = Math.min(
+    (CAMPAIGN_CONFIG.raised / CAMPAIGN_CONFIG.goalMax) * 100,
+    100
+  );
+
+  async function goToPayment(e: React.MouseEvent<HTMLButtonElement>) {
+    if (email.length < 5 || !email.includes("@")) {
+      alert(
+        "Por favor, digite um e-mail válido para garantirmos seu acesso vitalício!"
+      );
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await fetch("/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          message: "Novo interessado no Vitalício (MetaDriver)",
+          origin: "App Web",
+        }),
+      });
+
+      if (CAMPAIGN_CONFIG.notifyUrl.includes("formspree")) {
+        await fetch(CAMPAIGN_CONFIG.notifyUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            data: new Date().toLocaleString(),
+            mensagem: "Novo interessado no Vitalício (MetaDriver)",
+            origem: "App Web",
+          }),
+        });
+      }
+    } catch {
+      // silent — liberamos o mesmo assim
+    } finally {
+      setSubmitting(false);
+      setStep("payment");
+    }
+  }
+
+  async function copyPix() {
+    try {
+      await navigator.clipboard.writeText(CAMPAIGN_CONFIG.pixPayload);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  return (
+    <div
+      data-backdrop="campaign"
+      className={`fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-all duration-300 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div
+        className={`bg-slate-800 border border-slate-700 rounded-xl p-4 max-w-sm w-full shadow-2xl relative transform transition-all ${
+          visible ? "scale-100" : "scale-95"
+        }`}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 text-slate-400 hover:text-white p-2 z-10"
+          aria-label="Fechar"
+          type="button"
+        >
+          <i className="fas fa-times text-lg" />
+        </button>
+
+        <div className="text-center">
+          <div className="w-12 h-12 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-3 border border-indigo-500/50">
+            <i className="fas fa-rocket text-indigo-400 text-xl" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1">
+            Rumo a Versão Pro
+          </h3>
+
+          {step === "invite" && (
+            <div id="step-invite">
+              <p className="text-xs text-slate-300 mb-4 leading-relaxed px-2">
+                Para o Projeto continuar de pé, precisamos da sua colaboração
+                para arcar com os custos e publicar nas lojas.
+              </p>
+
+              <div className="bg-indigo-900/40 border border-indigo-500/50 rounded-lg p-3 mb-4 animate-pulse-slow">
+                <p className="text-xs text-indigo-200 leading-relaxed">
+                  <i className="fas fa-star text-yellow-400 mr-1 text-sm shadow-glow" />
+                  Colabore com <strong>R$ 15,00</strong> e ganhe a versão{" "}
+                  <strong className="text-white bg-indigo-600 px-1 rounded text-[10px]">
+                    PRO VITALÍCIA
+                  </strong>{" "}
+                  quando lançar!
+                </p>
+              </div>
+
+              <div className="bg-slate-900/60 rounded-lg p-3 border border-slate-700 mb-4 text-left">
+                <div className="flex justify-between items-end mb-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    Total Arrecadado
+                  </span>
+                  <span className="text-xl font-black text-emerald-400">
+                    {CAMPAIGN_CONFIG.raised.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-3 mb-1 overflow-hidden shadow-inner">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-3 rounded-full relative"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-4 text-left">
+                {MILESTONES.map((m) => {
+                  const reached = CAMPAIGN_CONFIG.raised >= m.goal;
+                  return (
+                    <div
+                      key={m.goal}
+                      className={`flex items-center gap-3 transition-all duration-500 ${
+                        reached ? "opacity-100" : "opacity-50"
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded flex items-center justify-center shrink-0 transition-colors ${
+                          reached
+                            ? "bg-emerald-500/20 border border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                            : "bg-slate-800 border border-slate-600"
+                        }`}
+                      >
+                        <i
+                          className={`${m.brand ? "fab" : "fas"} ${m.icon} text-[10px] ${
+                            reached ? "text-emerald-400" : "text-slate-400"
+                          }`}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex justify-between text-[10px] font-bold text-slate-300">
+                          <span>{m.label}</span>
+                          <span>{m.amount}</span>
+                        </div>
+                      </div>
+                      <i
+                        className={`text-xs ${
+                          reached
+                            ? "fas fa-check-circle text-emerald-400 shadow-glow"
+                            : "fas fa-lock text-slate-600"
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mb-4 text-left border-t border-slate-700 pt-3">
+                <label className="text-[10px] font-bold text-indigo-300 uppercase ml-1">
+                  Seu E-mail (Para receber o acesso):
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu@email.com"
+                  className="w-full mt-1 bg-slate-900 border border-slate-600 rounded p-3 text-white text-sm focus:border-indigo-500 outline-none placeholder-slate-600"
+                />
+              </div>
+
+              <button
+                onClick={goToPayment}
+                disabled={submitting}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 rounded-lg shadow-lg active:scale-95 transition-all disabled:opacity-60"
+              >
+                {submitting ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin mr-2" />
+                    REGISTRANDO...
+                  </>
+                ) : (
+                  <>
+                    QUERO APOIAR AGORA <i className="fas fa-arrow-right ml-2" />
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {step === "payment" && (
+            <div className="animate-fade-in pt-2">
+              <p className="text-xs text-white mb-2 font-bold">
+                Escaneie o QR Code no App do Banco:
+              </p>
+
+              <div className="bg-white p-3 rounded-lg inline-block shadow-lg mb-4">
+                <QRCodeCanvas
+                  value={CAMPAIGN_CONFIG.pixPayload}
+                  size={180}
+                  bgColor="#ffffff"
+                  fgColor="#000000"
+                  level="M"
+                />
+              </div>
+
+              <p className="text-[10px] text-slate-400 mb-2">
+                Ou use o Copia e Cola:
+              </p>
+
+              <button
+                onClick={copyPix}
+                className={`w-full border text-xs font-bold py-3 rounded-lg flex items-center justify-center gap-2 mb-3 transition-all ${
+                  copied
+                    ? "bg-emerald-500 text-white border-emerald-500"
+                    : "bg-slate-700 border-slate-600 text-slate-300"
+                }`}
+              >
+                {copied ? (
+                  <>
+                    <i className="fas fa-check-double" />
+                    <span>SUCESSO!</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="far fa-copy" />
+                    COPIAR CÓDIGO PIX
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => setStep("invite")}
+                className="text-xs text-slate-500 underline hover:text-white"
+              >
+                Voltar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/ClientLayout.tsx">
+"use client";
+
+import { AuthProvider } from "@/contexts/AuthContext";
+
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
+  return <AuthProvider>{children}</AuthProvider>;
+}
+</file>
+
+<file path="src/components/DriverDashboard.tsx">
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  calculate,
+  formatMoney,
+  loadState,
+  sanitizeNumericInput,
+  saveState,
+  DEFAULTS,
+} from "@/lib/driver";
+import type { DriverState } from "@/lib/types";
+import { useAuth } from "@/contexts/AuthContext";
+import { CampaignModal } from "./CampaignModal";
+import { HelpModal } from "./HelpModal";
+import { ShareButton } from "./ShareButton";
+import { useTimedPopup } from "@/hooks/useTimedPopup";
+
+const NUMERIC_INPUTS: (keyof DriverState)[] = [
+  "uberInput",
+  "ninenineInput",
+  "tipsInput",
+];
+
+export function DriverDashboard() {
+  const [state, setState] = useState<DriverState>(DEFAULTS);
+  const [hydrated, setHydrated] = useState(false);
+  const [now, setNow] = useState<Date>(() => new Date());
+  const [campaignOpen, setCampaignOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setState(loadState());
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveState(state);
+  }, [state, hydrated]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  useTimedPopup(() => setCampaignOpen(true), hydrated);
+
+  const results = useMemo(() => calculate(state, now), [state, now]);
+
+  function update<K extends keyof DriverState>(key: K, value: string) {
+    setState((prev) => ({
+      ...prev,
+      [key]: NUMERIC_INPUTS.includes(key) ? sanitizeNumericInput(value) : value,
+    }));
+  }
+
+  function resetData() {
+    if (
+      confirm(
+        "Tem certeza que deseja zerar os valores de hoje? (Preço e Consumo serão mantidos)"
+      )
+    ) {
+      setState((prev) => ({
+        ...prev,
+        uberInput: "",
+        ninenineInput: "",
+        tipsInput: "",
+        kmInput: "",
+      }));
+    }
+  }
+
+  const { user, login, register, logout } = useAuth();
+  const [loginMode, setLoginMode] = useState<"login" | "register">("login");
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginError("");
+    setLoginBusy(true);
+    const result = await login(loginEmail, loginPassword);
+    setLoginBusy(false);
+    if (result.ok) {
+      setShowLogin(false);
+      setLoginEmail("");
+      setLoginPassword("");
+    } else {
+      setLoginError(result.error || "Erro ao fazer login.");
+    }
+  }
+
+  const [registerName, setRegisterName] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerError, setRegisterError] = useState("");
+  const [registerBusy, setRegisterBusy] = useState(false);
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setRegisterError("");
+    setRegisterBusy(true);
+    const result = await register(registerName, registerEmail, registerPassword);
+    setRegisterBusy(false);
+    if (result.ok) {
+      setShowLogin(false);
+      setRegisterName("");
+      setRegisterEmail("");
+      setRegisterPassword("");
+    } else {
+      setRegisterError(result.error || "Erro ao cadastrar.");
+    }
+  }
+
+  function resetLoginForm() {
+    setLoginEmail("");
+    setLoginPassword("");
+    setLoginError("");
+    setRegisterName("");
+    setRegisterEmail("");
+    setRegisterPassword("");
+    setRegisterError("");
+  }
+
+  const remainingText = results.goalHit
+    ? "META BATIDA!"
+    : `Falta ${formatMoney(results.remaining)}`;
+
+  return (
+    <div className="w-full max-w-md mx-auto flex flex-col gap-3 p-4">
+      <div ref={dashboardRef} className="relative">
+        <div className="flex justify-end items-center gap-2 mb-2">
+          <button
+            onClick={() => setHelpOpen(true)}
+            className="text-[9px] text-slate-400 hover:text-blue-400 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider"
+            type="button"
+          >
+            <i className="fas fa-circle-question text-[10px]" /> Ajuda
+          </button>
+
+          {user ? (
+            <button
+              onClick={logout}
+              className="text-[9px] text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider"
+              type="button"
+              title={user.email}
+            >
+              <i className="fas fa-sign-out-alt text-[10px]" /> Sair
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowLogin(true)}
+              className="text-[9px] text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider"
+              type="button"
+            >
+              <i className="fas fa-lock text-[10px]" /> Entrar
+            </button>
+          )}
+        </div>
+        <Header gross={results.gross} net={results.netIncome} />
+
+        <div className="bg-slate-800 rounded-xl p-3 shadow-lg border border-slate-700/50">
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="INÍCIO">
+              <input
+                type="time"
+                value={state.startTime}
+                onChange={(e) => update("startTime", e.target.value)}
+                className={inputCls("focus:border-blue-500")}
+              />
+            </Field>
+            <Field label="META">
+              <input
+                type="number"
+                value={state.goalAmount}
+                onChange={(e) => update("goalAmount", e.target.value)}
+                className={inputCls("focus:border-blue-500")}
+              />
+            </Field>
+            <Field label="KM ATUAL">
+              <input
+                type="number"
+                value={state.kmInput}
+                placeholder="0"
+                onChange={(e) => update("kmInput", e.target.value)}
+                className={inputCls(
+                  "border-l-4 border-l-purple-500 focus:border-purple-500"
+                )}
+              />
+            </Field>
+          </div>
+
+          <details className="mt-3 group">
+            <summary className="text-[10px] text-blue-400 font-bold cursor-pointer hover:text-blue-300 flex justify-center items-center gap-2 bg-slate-900/50 rounded py-2 select-none">
+              <i className="fas fa-gas-pump" /> CONFIGURAR COMBUSTÍVEL
+            </summary>
+            <div className="grid grid-cols-2 gap-3 mt-3 pt-2 border-t border-slate-700">
+              <Field label="R$/LITRO" small>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={state.fuelPrice}
+                  placeholder="5.89"
+                  onChange={(e) => update("fuelPrice", e.target.value)}
+                  className={inputSmall("focus:border-blue-500")}
+                />
+              </Field>
+              <Field label="KM/L" small>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={state.consumption}
+                  placeholder="10"
+                  onChange={(e) => update("consumption", e.target.value)}
+                  className={inputSmall("focus:border-blue-500")}
+                />
+              </Field>
+            </div>
+          </details>
+        </div>
+
+        <div className="bg-slate-800 rounded-xl p-4 shadow-xl border-l-4 border-blue-500 relative overflow-hidden">
+          <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <i className="fas fa-wallet text-blue-500" /> Lançamentos (Brutos)
+          </h2>
+          <div className="grid grid-cols-3 gap-3">
+            <LabeledInput
+              label="Uber"
+              value={state.uberInput}
+              onChange={(v) => update("uberInput", v)}
+              tone="white"
+            />
+            <LabeledInput
+              label="99Pop"
+              value={state.ninenineInput}
+              onChange={(v) => update("ninenineInput", v)}
+              tone="yellow-500"
+            />
+            <LabeledInput
+              label="Extra"
+              value={state.tipsInput}
+              onChange={(v) => update("tipsInput", v)}
+              tone="emerald-500"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <StatBox tone="red" label="Gasolina" value={formatMoney(results.fuelCost)} />
+          <StatBox
+            tone="blue"
+            label="Hora Bruta"
+            value={formatMoney(results.hourlyGross)}
+          />
+        </div>
+
+        <div className="bg-slate-800/80 rounded-xl p-2 border border-purple-500/20 flex flex-col justify-center items-center py-2">
+          <div className="text-[9px] text-purple-400 uppercase font-bold mb-0.5">
+            Valor do KM Rodado
+          </div>
+          <div className="text-base font-black text-purple-400">
+            {formatMoney(results.kmValue)}
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 shadow-lg border border-slate-700">
+          <div className="flex justify-between items-end mb-2">
+            <div>
+              <div className="text-[9px] text-slate-400 uppercase font-bold">
+                Jornada
+              </div>
+              <div className="text-sm font-mono font-bold text-white">
+                {results.workedHours}h {results.workedMinutes
+                  .toString()
+                  .padStart(2, "0")}
+                m
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[9px] text-slate-400 uppercase font-bold">
+                Término
+              </div>
+              <div
+                className={`text-sm font-bold ${
+                  results.goalHit ? "text-emerald-400" : "text-white"
+                }`}
+              >
+                {results.estimatedFinish}
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full bg-slate-950 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner border border-slate-800">
+            <div
+              className={`h-full rounded-full transition-all duration-700 relative bg-gradient-to-r ${
+                results.goalHit
+                  ? "from-emerald-600 to-emerald-400"
+                  : "from-blue-600 to-cyan-500"
+              }`}
+              style={{ width: `${results.progressPct}%` }}
+            >
+              <div className="absolute right-0 top-0 h-full w-1 bg-white/50 blur-[1px]" />
+            </div>
+          </div>
+
+          <div className="text-center bg-slate-950/30 rounded py-1">
+            <span
+              className={`text-[11px] font-bold ${
+                results.goalHit ? "text-emerald-400" : "text-slate-300"
+              }`}
+            >
+              {remainingText}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center gap-3 mt-2">
+        <button
+          type="button"
+          onClick={resetData}
+          data-share-exclude="true"
+          className="text-[10px] text-slate-500 hover:text-red-400 transition-colors uppercase font-bold tracking-wider border border-slate-700/50 hover:border-red-900/50 rounded-lg px-4 py-2 w-full"
+        >
+          <i className="fas fa-trash-alt mr-2" /> Reiniciar
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setCampaignOpen(true)}
+          data-share-exclude="true"
+          className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg shadow-purple-900/20 animate-pulse flex justify-center items-center gap-2 transition-all active:scale-95 border border-white/10"
+        >
+          <i className="fas fa-rocket" /> AJUDE A CRIAR O APP OFICIAL
+        </button>
+
+        <ShareButton targetRef={dashboardRef} />
+      </div>
+
+      <CampaignModal open={campaignOpen} onClose={() => setCampaignOpen(false)} />
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      {showLogin && (
+        <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setShowLogin(false); }}>
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-xs w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
+                <button
+                  onClick={() => { setLoginMode("login"); resetLoginForm(); }}
+                  className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-all ${loginMode === "login" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}
+                  type="button"
+                >
+                  Entrar
+                </button>
+                <button
+                  onClick={() => { setLoginMode("register"); resetLoginForm(); }}
+                  className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md transition-all ${loginMode === "register" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}
+                  type="button"
+                >
+                  Cadastro
+                </button>
+              </div>
+              <button onClick={() => setShowLogin(false)} className="text-slate-400 hover:text-white p-1" type="button">
+                <i className="fas fa-times" />
+              </button>
+            </div>
+
+            {loginMode === "login" ? (
+              <form onSubmit={handleLogin} className="space-y-3">
+                {loginError && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-[10px] text-red-400 font-bold text-center">
+                    {loginError}
+                  </div>
+                )}
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="E-mail"
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs focus:border-blue-500 outline-none placeholder-slate-600"
+                />
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Senha"
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs focus:border-blue-500 outline-none placeholder-slate-600"
+                />
+                <button
+                  type="submit"
+                  disabled={loginBusy}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2.5 rounded-lg transition-all disabled:opacity-60"
+                >
+                  {loginBusy ? (
+                    <span className="inline-flex items-center gap-1">
+                      <i className="fas fa-spinner fa-spin" /> Entrando...
+                    </span>
+                  ) : "Entrar"}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister} className="space-y-3">
+                {registerError && (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-[10px] text-red-400 font-bold text-center">
+                    {registerError}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={registerName}
+                  onChange={(e) => setRegisterName(e.target.value)}
+                  placeholder="Nome completo"
+                  required
+                  minLength={2}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs focus:border-blue-500 outline-none placeholder-slate-600"
+                />
+                <input
+                  type="email"
+                  value={registerEmail}
+                  onChange={(e) => setRegisterEmail(e.target.value)}
+                  placeholder="E-mail"
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs focus:border-blue-500 outline-none placeholder-slate-600"
+                />
+                <input
+                  type="password"
+                  value={registerPassword}
+                  onChange={(e) => setRegisterPassword(e.target.value)}
+                  placeholder="Senha (mín. 8 caracteres, 1 maiúscula, 1 número)"
+                  required
+                  minLength={8}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs focus:border-blue-500 outline-none placeholder-slate-600"
+                />
+                <p className="text-[9px] text-slate-500 leading-relaxed">
+                  A senha deve ter no mínimo <strong className="text-slate-300">8 caracteres</strong>,
+                  incluindo <strong className="text-slate-300">1 letra maiúscula</strong> e{' '}
+                  <strong className="text-slate-300">1 número</strong>.
+                </p>
+                <button
+                  type="submit"
+                  disabled={registerBusy}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2.5 rounded-lg transition-all disabled:opacity-60"
+                >
+                  {registerBusy ? (
+                    <span className="inline-flex items-center gap-1">
+                      <i className="fas fa-spinner fa-spin" /> Cadastrando...
+                    </span>
+                  ) : "Criar conta"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Header({ gross, net }: { gross: number; net: number }) {
+  return (
+    <div className="mb-1">
+      <div className="flex justify-between items-start">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700 shadow-lg shrink-0">
+            <i className="fas fa-bullseye text-blue-500 text-lg" />
+          </div>
+          <div>
+            <h1 className="text-xl font-black text-white leading-none tracking-tight">
+              META<span className="text-blue-500">DRIVER</span>
+            </h1>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+              Seu copiloto
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 shrink-0">
+          <div className="text-right bg-slate-800 px-3 py-1.5 rounded-lg border border-blue-500/20 shadow-sm">
+            <div className="text-[9px] text-slate-400 uppercase font-bold mb-0.5">
+              Bruto
+            </div>
+            <div className="text-sm font-black text-blue-400 leading-none">
+              {formatMoney(gross)}
+            </div>
+          </div>
+          <div className="text-right bg-slate-800 px-3 py-1.5 rounded-lg border border-emerald-500/20 shadow-sm">
+            <div className="text-[9px] text-slate-400 uppercase font-bold mb-0.5">
+              Líquido
+            </div>
+            <div className="text-sm font-black text-emerald-400 leading-none">
+              {formatMoney(net)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  small,
+  children,
+}: {
+  label: string;
+  small?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label
+        className={`block ${
+          small ? "text-[9px]" : "text-[10px]"
+        } text-slate-400 font-bold mb-1 text-center`}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const inputBase =
+  "w-full bg-slate-900 border border-slate-700 text-center text-sm font-bold text-white outline-none transition-colors";
+
+function inputCls(extra = "") {
+  return `${inputBase} rounded-lg py-2 px-1 ${extra}`;
+}
+
+function inputSmall(extra = "") {
+  return `${inputBase} rounded p-2 ${extra}`;
+}
+
+function LabeledInput({
+  label,
+  value,
+  onChange,
+  tone,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  tone: "white" | "yellow-500" | "emerald-500";
+}) {
+  const ringClass =
+    tone === "white"
+      ? "focus:border-white focus:ring-1 focus:ring-white"
+      : tone === "yellow-500"
+      ? "focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
+      : "focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
+  const labelClass =
+    tone === "yellow-500"
+      ? "text-yellow-500/80"
+      : tone === "emerald-500"
+      ? "text-emerald-500/80"
+      : "text-slate-400";
+  return (
+    <div className="relative group">
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value}
+        placeholder="0"
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full bg-slate-900 border border-slate-700 rounded-xl pt-5 pb-2 px-1 text-center font-bold text-lg text-white transition-all ${ringClass}`}
+      />
+      <span
+        className={`absolute top-1.5 left-0 w-full text-center text-[9px] ${labelClass} uppercase font-bold pointer-events-none`}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function StatBox({
+  tone,
+  label,
+  value,
+}: {
+  tone: "red" | "blue";
+  label: string;
+  value: string;
+}) {
+  const border = tone === "red" ? "border-red-500/20" : "border-blue-500/20";
+  const valueColor = tone === "red" ? "text-red-400" : "text-white";
+  const labelColor = tone === "red" ? "text-red-400" : "text-blue-400";
+  return (
+    <div
+      className={`bg-slate-800/80 rounded-xl p-2 border ${border} flex flex-col justify-center items-center py-3`}
+    >
+      <div className={`text-[9px] ${labelColor} uppercase font-bold mb-0.5`}>
+        {label}
+      </div>
+      <div className={`text-base font-black ${valueColor}`}>{value}</div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/HelpModal.tsx">
+"use client";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+};
+
+export function HelpModal({ open, onClose }: Props) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-sm w-full shadow-2xl relative max-h-[90vh] overflow-y-auto">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-slate-400 hover:text-white p-1 z-10"
+          aria-label="Fechar"
+          type="button"
+        >
+          <i className="fas fa-times" />
+        </button>
+
+        <div className="text-center mb-4">
+          <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-3 border border-blue-500/50">
+            <i className="fas fa-question text-blue-400 text-xl" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1">Como usar o MetaDriver</h3>
+          <p className="text-[10px] text-slate-400">Acompanhe seus ganhos em tempo real</p>
+        </div>
+
+        <div className="space-y-4 text-left">
+          <Section icon="fa-clock" title="1. Horário de início">
+            Defina o horário que você começou a rodar. O app calcula automaticamente
+            quanto tempo de jornada você já tem.
+          </Section>
+
+          <Section icon="fa-bullseye" title="2. Meta do dia">
+            Quanto você quer ganhar hoje? Defina um valor realista e acompanhe o progresso
+            na barra percentual.
+          </Section>
+
+          <Section icon="fa-road" title="3. KM atual">
+            Informe os quilômetros rodados até agora. O app calcula o gasto com
+            combustível e o valor por KM.
+          </Section>
+
+          <Section icon="fa-gas-pump" title="4. Configurar combustível">
+            Clique em &quot;Configurar Combustível&quot; para ajustar o preço do litro
+            e o consumo do seu carro (km/l). Esse dado é salvo automaticamente.
+          </Section>
+
+          <Section icon="fa-wallet" title="5. Lançar ganhos">
+            Preencha os campos Uber, 99Pop e Extra com os valores que você já recebeu.
+            Você pode usar &quot;+&quot; para somar múltiplas corridas
+            (ex: 25+30+18).
+          </Section>
+
+          <Section icon="fa-chart-line" title="6. Acompanhe os resultados">
+            O painel mostra em tempo real:
+            <ul className="list-disc list-inside text-[11px] text-slate-300 mt-1 space-y-0.5">
+              <li>Bruto e Líquido (descontado combustível)</li>
+              <li>Gasto com gasolina</li>
+              <li>Valor ganho por hora</li>
+              <li>Valor por KM rodado</li>
+              <li>Previsão de término da meta</li>
+            </ul>
+          </Section>
+
+          <Section icon="fa-share-alt" title="7. Compartilhar">
+            Use o botão &quot;Compartilhar Resultado&quot; para gerar uma imagem
+            do seu dia e enviar para amigos ou redes sociais.
+          </Section>
+
+          <Section icon="fa-trash-alt" title="8. Reiniciar">
+            O botão &quot;Reiniciar&quot; limpa os lançamentos do dia (Uber, 99, Extra, KM)
+            mantendo o preço do combustível e consumo salvos.
+          </Section>
+        </div>
+
+        <div className="mt-5 pt-3 border-t border-slate-700 text-center">
+          <button
+            onClick={onClose}
+            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2.5 px-6 rounded-lg transition-all"
+            type="button"
+          >
+            Entendi!
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  icon,
+  title,
+  children,
+}: {
+  icon: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/50">
+      <div className="flex items-center gap-2 mb-1">
+        <i className={`fas ${icon} text-blue-400 text-[10px]`} />
+        <h4 className="text-xs font-bold text-white">{title}</h4>
+      </div>
+      <div className="text-[11px] text-slate-300 leading-relaxed">{children}</div>
+    </div>
+  );
+}
+</file>
+
+<file path="src/components/ShareButton.tsx">
+"use client";
+
+import { useState } from "react";
+import { toBlob } from "html-to-image";
+
+export function ShareButton({ targetRef }: { targetRef: React.RefObject<HTMLElement> }) {
+  const [busy, setBusy] = useState(false);
+
+  async function share() {
+    if (!targetRef.current) return;
+    setBusy(true);
+    try {
+      const blob = await toBlob(targetRef.current, {
+        backgroundColor: "#0f172a",
+        filter: (node) => {
+          if (!(node instanceof HTMLElement)) return true;
+          if (node.dataset.shareExclude === "true") return false;
+          return true;
+        },
+      });
+      if (!blob) throw new Error("Falha ao gerar imagem");
+
+      const file = new File([blob], "metadriver-resultado.png", {
+        type: "image/png",
+      });
+
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.share &&
+        navigator.canShare &&
+        navigator.canShare({ files: [file] })
+      ) {
+        try {
+          await navigator.share({ title: "MetaDriver", files: [file] });
+        } catch {
+          // cancelado
+        }
+      } else {
+        const link = document.createElement("a");
+        link.download = "metadriver-resultado.png";
+        link.href = URL.createObjectURL(file);
+        link.click();
+        alert("Imagem baixada! Verifique seus downloads.");
+      }
+    } catch (err) {
+      console.error("Erro ao gerar imagem:", err);
+      alert("Erro ao criar a imagem. Tente novamente.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={share}
+      disabled={busy}
+      data-share-exclude="true"
+      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-900/20 flex justify-center items-center gap-2 transition-all active:scale-95 border border-white/10 disabled:opacity-60"
+    >
+      {busy ? (
+        <>
+          <i className="fas fa-spinner fa-spin" />
+          Gerando imagem...
+        </>
+      ) : (
+        <>
+          <i className="fas fa-share-alt" />
+          COMPARTILHAR RESULTADO
+        </>
+      )}
+    </button>
+  );
+}
+</file>
+
+<file path="src/contexts/AuthContext.tsx">
+"use client";
+
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import type { ReactNode } from "react";
+
+type AuthUser = { email: string; name: string };
+
+type AuthContextType = {
+  user: AuthUser | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  register: (name: string, email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  logout: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data.user);
+      } else {
+        setUser(null);
+      }
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  const login = useCallback(async (email: string, password: string) => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || "Erro ao fazer login" };
+      setUser(data.user);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Erro de conexão com o servidor." };
+    }
+  }, []);
+
+  const register = useCallback(async (name: string, email: string, password: string) => {
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || "Erro ao cadastrar" };
+      setUser(data.user);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Erro de conexão com o servidor." };
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setUser(null);
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth deve ser usado dentro de AuthProvider");
+  return ctx;
+}
+</file>
+
+<file path="src/db/index.ts">
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool);
+</file>
+
+<file path="src/db/schema.ts">
+import { pgTable, serial, varchar, timestamp, text } from "drizzle-orm/pg-core";
+
+export const emails = pgTable("emails", {
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  name: varchar("name", { length: 255 }),
+  message: text("message"),
+  origin: varchar("origin", { length: 50 }).default("web"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  password: varchar("password", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+</file>
+
+<file path="src/hooks/useTimedPopup.ts">
+"use client";
+
+import { useEffect, useRef } from "react";
+import { POPUP_CONFIG } from "@/lib/campaign";
+
+export function useTimedPopup(onOpen: () => void, enabled = true) {
+  const cbRef = useRef(onOpen);
+  cbRef.current = onOpen;
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const agora = Date.now();
+    const ultimoVisto = window.localStorage.getItem(POPUP_CONFIG.storageKey);
+    const tempoEsperaMs =
+      POPUP_CONFIG.hours * 60 * 60 * 1000 +
+      POPUP_CONFIG.minutes * 60 * 1000 +
+      POPUP_CONFIG.seconds * 1000;
+
+    if (!ultimoVisto || agora - parseInt(ultimoVisto) > tempoEsperaMs) {
+      const timer = setTimeout(() => {
+        cbRef.current();
+        window.localStorage.setItem(POPUP_CONFIG.storageKey, String(Date.now()));
+      }, POPUP_CONFIG.delayMs);
+      return () => clearTimeout(timer);
+    }
+  }, [enabled]);
+}
+</file>
+
+<file path="src/lib/auth.ts">
+import { SignJWT, jwtVerify } from "jose";
+import { compare, hash } from "bcryptjs";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
+const secret = new TextEncoder().encode(
+  process.env.JWT_SECRET || "fallback-dev-secret"
+);
+
+export type AuthUser = {
+  email: string;
+  name: string;
+};
+
+export async function signToken(user: AuthUser): Promise<string> {
+  return new SignJWT({ sub: user.email, name: user.name })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("7d")
+    .sign(secret);
+}
+
+export async function verifyToken(token: string): Promise<AuthUser | null> {
+  try {
+    const { payload } = await jwtVerify(token, secret);
+    return {
+      email: (payload.sub as string) || "",
+      name: (payload.name as string) || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function findUserByEmail(email: string) {
+  const lower = email.toLowerCase();
+  const result = await db.select().from(users).where(eq(users.email, lower));
+  return result[0] || null;
+}
+
+export async function createUser(
+  email: string,
+  password: string,
+  name: string
+) {
+  const lower = email.toLowerCase();
+  const hashed = await hash(password, 12);
+  const result = await db
+    .insert(users)
+    .values({ email: lower, password: hashed, name })
+    .returning();
+  return result[0];
+}
+
+export async function verifyPassword(
+  plain: string,
+  hashed: string
+): Promise<boolean> {
+  return compare(plain, hashed);
+}
+
+export function getCredentials() {
+  return {
+    email: process.env.AUTH_EMAIL || "",
+    password: process.env.AUTH_PASSWORD || "",
+  };
+}
+</file>
+
+<file path="src/lib/campaign.ts">
+import type { CampaignConfig, Milestone } from "./types";
+
+export const CAMPAIGN_CONFIG: CampaignConfig = {
+  raised: 17.52,
+  goalMax: 1500.0,
+  notifyUrl: "https://formspree.io/f/mlgggyzk",
+  pixPayload:
+    "00020126400014br.gov.bcb.pix0118dev.jcfj@gmail.com5204000053039865802BR5920JOSCECLIOFONSCAJNIOR6009Sao Paulo610901227-20062230519daqr1178951418737806304E837",
+  pixKey: "dev.jcfj@gmail.com",
+};
+
+export const MILESTONES: Milestone[] = [
+  {
+    goal: 200,
+    label: "Hospedagem & Servidor",
+    amount: "R$ 200",
+    icon: "fa-server",
+    brand: false,
+  },
+  {
+    goal: 600,
+    label: "Refatoração Do site para um modelo profissional",
+    amount: "R$ 600",
+    icon: "fa-node-js",
+    brand: true,
+  },
+  {
+    goal: 1000,
+    label: "Versão para Android",
+    amount: "R$ 1.000",
+    icon: "fa-android",
+    brand: true,
+  },
+  {
+    goal: 1500,
+    label: "Publ. e licensa para iOS Apple",
+    amount: "R$ 1.500",
+    icon: "fa-apple",
+    brand: true,
+  },
+];
+
+export const POPUP_CONFIG = {
+  hours: 12,
+  minutes: 0,
+  seconds: 0,
+  delayMs: 2000,
+  storageKey: "metadriver_last_seen_timestamp",
+};
+</file>
+
+<file path="src/lib/driver.ts">
+import type { DriverState, DriverResults } from "./types";
+
+const STORAGE_KEYS = {
+  startTime: "drv_start",
+  goalAmount: "drv_goal",
+  kmInput: "drv_km",
+  fuelPrice: "drv_fuel",
+  consumption: "drv_cons",
+  uberInput: "drv_uber",
+  ninenineInput: "drv_99",
+  tipsInput: "drv_tips",
+} as const;
+
+export const DEFAULTS: DriverState = {
+  startTime: "06:00",
+  goalAmount: "300",
+  kmInput: "",
+  fuelPrice: "5.89",
+  consumption: "10",
+  uberInput: "",
+  ninenineInput: "",
+  tipsInput: "",
+};
+
+export function loadState(): DriverState {
+  if (typeof window === "undefined") return DEFAULTS;
+  const out: DriverState = { ...DEFAULTS };
+  (Object.keys(STORAGE_KEYS) as (keyof DriverState)[]).forEach((key) => {
+    const raw = window.localStorage.getItem(STORAGE_KEYS[key]);
+    if (raw !== null) {
+      out[key] = raw;
+    }
+  });
+  return out;
+}
+
+export function saveState(state: DriverState): void {
+  if (typeof window === "undefined") return;
+  (Object.keys(STORAGE_KEYS) as (keyof DriverState)[]).forEach((key) => {
+    window.localStorage.setItem(STORAGE_KEYS[key], state[key] ?? "");
+  });
+}
+
+export function parseMath(str: string): number {
+  if (!str) return 0;
+  const clean = str.toString().replace(/\s/g, "").replace(",", ".");
+  try {
+    if (clean.includes("+")) {
+      return clean
+        .split("+")
+        .reduce((acc, curr) => acc + (parseFloat(curr) || 0), 0);
+    }
+    return parseFloat(clean) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function formatMoney(n: number): string {
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+export function calculate(state: DriverState, now = new Date()): DriverResults {
+  const gross =
+    parseMath(state.uberInput) +
+    parseMath(state.ninenineInput) +
+    parseMath(state.tipsInput);
+
+  const km = parseMath(state.kmInput);
+  const fuelPrice = parseFloat(state.fuelPrice) || 0;
+  const consumption = parseFloat(state.consumption) || 1;
+
+  const liters = km / consumption;
+  const fuelCost = liters * fuelPrice;
+  const netIncome = gross - fuelCost;
+
+  const [h, m] = state.startTime.split(":").map(Number);
+  const startDt = new Date(now);
+  startDt.setHours(h || 0, m || 0, 0, 0);
+
+  let diffMins = (now.getTime() - startDt.getTime()) / 60000;
+  if (diffMins < 0) diffMins = 0;
+  const hoursDec = diffMins / 60;
+
+  const workedHours = Math.floor(diffMins / 60);
+  const workedMinutes = Math.floor(diffMins % 60);
+
+  const hourlyGross = hoursDec > 0 ? gross / hoursDec : 0;
+  const kmValue = km > 0 ? gross / km : 0;
+
+  const goal = parseFloat(state.goalAmount) || 0;
+  const remaining = goal - gross;
+  const goalHit = remaining <= 0;
+  const progressPct = goal > 0 ? Math.min((gross / goal) * 100, 100) : 0;
+
+  let estimatedFinish = "--:--";
+  if (goalHit) {
+    estimatedFinish = "LIVRE";
+  } else if (hourlyGross > 0) {
+    const hoursNeeded = remaining / hourlyGross;
+    const finishTime = new Date(now.getTime() + hoursNeeded * 3600000);
+    estimatedFinish = `${finishTime
+      .getHours()
+      .toString()
+      .padStart(2, "0")}:${finishTime.getMinutes().toString().padStart(2, "0")}`;
+  }
+
+  return {
+    gross,
+    netIncome,
+    fuelCost,
+    hourlyGross,
+    kmValue,
+    workedHours,
+    workedMinutes,
+    remaining,
+    progressPct: Math.max(progressPct, 0),
+    estimatedFinish,
+    goalHit,
+  };
+}
+
+export function sanitizeNumericInput(value: string): string {
+  return value.replace(/[^0-9+.,]/g, "");
+}
+</file>
+
+<file path="src/lib/types.ts">
+export type DriverState = {
+  startTime: string;
+  goalAmount: string;
+  kmInput: string;
+  fuelPrice: string;
+  consumption: string;
+  uberInput: string;
+  ninenineInput: string;
+  tipsInput: string;
+};
+
+export type DriverResults = {
+  gross: number;
+  netIncome: number;
+  fuelCost: number;
+  hourlyGross: number;
+  kmValue: number;
+  workedHours: number;
+  workedMinutes: number;
+  remaining: number;
+  progressPct: number;
+  estimatedFinish: string;
+  goalHit: boolean;
+};
+
+export type CampaignConfig = {
+  raised: number;
+  goalMax: number;
+  notifyUrl: string;
+  pixPayload: string;
+  pixKey: string;
+};
+
+export type Milestone = {
+  goal: number;
+  label: string;
+  amount: string;
+  icon: string;
+  brand: boolean;
+};
+</file>
+
+<file path=".eslintrc.json">
+{
+  "extends": "next/core-web-vitals"
+}
+</file>
+
+<file path=".gitignore">
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+.env.local
+</file>
+
+<file path="drizzle.config.ts">
+import { config } from "dotenv";
+import { defineConfig } from "drizzle-kit";
+
+// Força o dotenv a ler o arquivo correto do Next.js
+config({ path: ".env.local" });
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/db/schema.ts",
+  out: "./src/db/migrations",
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+</file>
+
+<file path="next.config.mjs">
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+};
+
+export default nextConfig;
+</file>
+
+<file path="package.json">
+{
+  "name": "metadriver",
+  "version": "2.0.0",
+  "private": true,
+  "description": "MetaDriver | Seu Copiloto de Lucros",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "bcryptjs": "^3.0.3",
+    "drizzle-orm": "^0.45.2",
+    "html-to-image": "^1.11.13",
+    "jose": "^6.2.3",
+    "next": "14.2.15",
+    "pg": "^8.22.0",
+    "qrcode.react": "^4.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.16.11",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.15",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.6.3"
+  }
+}
+</file>
+
+<file path="postcss.config.mjs">
+const config = {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
+};
+
+export default config;
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "legacy"]
+}
+</file>
+
+</files>

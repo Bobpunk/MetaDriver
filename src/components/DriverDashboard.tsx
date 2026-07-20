@@ -15,6 +15,7 @@ import { CampaignModal } from "./CampaignModal";
 import { HelpModal } from "./HelpModal";
 import { ShareButton } from "./ShareButton";
 import { InsightsDashboard } from "./InsightsDashboard";
+import { SettingsPanel } from "./SettingsPanel";
 import { useTimedPopup } from "@/hooks/useTimedPopup";
 
 const NUMERIC_INPUTS: (keyof DriverState)[] = [
@@ -34,6 +35,7 @@ export function DriverDashboard() {
   const [now, setNow] = useState<Date>(() => new Date());
   const [campaignOpen, setCampaignOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [tab, setTab] = useState<"painel" | "insights">("painel");
   const [showLogin, setShowLogin] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
@@ -171,6 +173,16 @@ export function DriverDashboard() {
           )}
 
           <div className="flex items-center gap-2">
+            {user && (
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="text-[9px] text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider rounded-lg px-2 py-1"
+                type="button"
+                title="Configurações"
+              >
+                <i className="fas fa-cog text-[10px]" /> Config
+              </button>
+            )}
             <button
               onClick={() => setHelpOpen(true)}
               className="text-[9px] text-slate-400 hover:text-blue-400 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider"
@@ -179,7 +191,7 @@ export function DriverDashboard() {
               <i className="fas fa-circle-question text-[10px]" /> Ajuda
             </button>
 
-          {user && user.pro ? (
+          {user ? (
             <button
               onClick={logout}
               className="text-[9px] text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider"
@@ -342,6 +354,7 @@ export function DriverDashboard() {
 
       <CampaignModal open={campaignOpen} onClose={() => setCampaignOpen(false)} />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {showLogin && (
         <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setShowLogin(false); }}>

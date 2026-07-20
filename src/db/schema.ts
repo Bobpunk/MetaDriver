@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, timestamp, text, boolean, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, timestamp, text, boolean } from "drizzle-orm/pg-core";
 
 export const emails = pgTable("emails", {
   id: serial("id").primaryKey(),
@@ -19,9 +19,7 @@ export const dailyLogs = pgTable("daily_logs", {
   otherExpenses: varchar("other_expenses", { length: 50 }).notNull().default("0"),
   grossEarnings: varchar("gross_earnings", { length: 50 }).notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (t) => ({
-  userDateUnique: unique("uq_user_date").on(t.userEmail, t.date),
-}));
+});
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),

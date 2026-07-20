@@ -14,11 +14,11 @@ export type AuthUser = {
   pro: boolean;
 };
 
-export async function signToken(user: AuthUser): Promise<string> {
+export async function signToken(user: AuthUser, expiresIn: string | number = "7d"): Promise<string> {
   return new SignJWT({ sub: user.email, name: user.name, pro: user.pro })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("7d")
+    .setExpirationTime(expiresIn)
     .sign(secret);
 }
 

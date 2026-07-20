@@ -14,7 +14,7 @@ type AuthUser = { email: string; name: string; pro: boolean };
 type AuthContextType = {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<{ ok: boolean; error?: string }>;
   register: (name: string, email: string, password: string, confirmPassword: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
 };
@@ -45,12 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, [checkAuth]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, rememberMe = false) => {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, rememberMe }),
       });
       const data = await res.json();
       if (!res.ok) return { ok: false, error: data.error || "Erro ao fazer login" };

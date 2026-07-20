@@ -11,11 +11,10 @@ import {
 } from "@/lib/driver";
 import type { DriverState } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
-import { canAccess } from "@/lib/pro";
 import { CampaignModal } from "./CampaignModal";
 import { HelpModal } from "./HelpModal";
 import { ShareButton } from "./ShareButton";
-import { DailyAgenda } from "./DailyAgenda";
+import { InsightsDashboard } from "./InsightsDashboard";
 import { useTimedPopup } from "@/hooks/useTimedPopup";
 
 const NUMERIC_INPUTS: (keyof DriverState)[] = [
@@ -35,10 +34,11 @@ export function DriverDashboard() {
   const [now, setNow] = useState<Date>(() => new Date());
   const [campaignOpen, setCampaignOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [tab, setTab] = useState<"painel" | "agenda">("painel");
+  const [tab, setTab] = useState<"painel" | "insights">("painel");
   const [showLogin, setShowLogin] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [loginRemember, setLoginRemember] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
@@ -92,12 +92,13 @@ export function DriverDashboard() {
     e.preventDefault();
     setLoginError("");
     setLoginBusy(true);
-    const result = await login(loginEmail, loginPassword);
+    const result = await login(loginEmail, loginPassword, loginRemember);
     setLoginBusy(false);
     if (result.ok) {
       setShowLogin(false);
       setLoginEmail("");
       setLoginPassword("");
+      setLoginRemember(false);
     } else {
       setLoginError(result.error || "Erro ao fazer login.");
     }
@@ -158,11 +159,11 @@ export function DriverDashboard() {
                 <i className="fas fa-chart-simple mr-1" /> Painel
               </button>
               <button
-                onClick={() => setTab("agenda")}
-                className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md transition-all ${tab === "agenda" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}
+                onClick={() => setTab("insights")}
+                className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md transition-all ${tab === "insights" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}
                 type="button"
               >
-                <i className="fas fa-calendar-days mr-1" /> Agenda
+                <i className="fas fa-chart-line mr-1" /> Dashboard
               </button>
             </div>
           ) : (
@@ -178,7 +179,7 @@ export function DriverDashboard() {
               <i className="fas fa-circle-question text-[10px]" /> Ajuda
             </button>
 
-            {user ? (
+          {user && user.pro ? (
             <button
               onClick={logout}
               className="text-[9px] text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider"
@@ -200,13 +201,13 @@ export function DriverDashboard() {
         </div>
         <Header gross={results.gross} net={results.netIncome} />
 
-        {tab === "agenda" && user ? (
-          <DailyAgenda
+        {tab === "insights" && user ? (
+          <InsightsDashboard
             email={user.email}
-            currentGoal={state.goalAmount}
-            currentKm={state.kmInput}
-            currentFuelCost={String(results.fuelCost)}
-            currentGross={String(results.gross)}
+            prefillGoal={state.goalAmount}
+            prefillKm={state.kmInput}
+            prefillFuel={String(results.fuelCost)}
+            prefillGross={String(results.gross)}
           />
         ) : (
         <div>
@@ -291,61 +292,7 @@ export function DriverDashboard() {
             <div className="text-base font-black text-purple-400">{formatMoney(results.kmValue)}</div>
           </div>
 
-          {user && canAccess("complete_costs", user.pro) ? (
-            <>
-              <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 shadow-lg border border-emerald-700/40">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-2">
-                    <i className="fas fa-crown" /> Custos Pro
-                  </h2>
-                  <span className="text-[9px] bg-emerald-600/20 text-emerald-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Pro</span>
-                </div>
-                <details className="group">
-                  <summary className="text-[10px] text-emerald-400 font-bold cursor-pointer hover:text-emerald-300 flex items-center gap-2 bg-slate-900/50 rounded py-2 px-3 select-none">
-                    <i className="fas fa-calculator" /> Custos Fixos Mensais
-                  </summary>
-                  <div className="grid grid-cols-2 gap-2 mt-3 pt-2 border-t border-emerald-900/30">
-                    <Field label="Financiamento" small>
-                      <input type="text" value={state.proFinancing} onChange={(e) => update("proFinancing", sanitizeNumericInput(e.target.value))} placeholder="0" className={inputSmall("focus:border-emerald-500")} />
-                    </Field>
-                    <Field label="Manutenção" small>
-                      <input type="text" value={state.proMaintenance} onChange={(e) => update("proMaintenance", sanitizeNumericInput(e.target.value))} placeholder="0" className={inputSmall("focus:border-emerald-500")} />
-                    </Field>
-                    <Field label="Seguro" small>
-                      <input type="text" value={state.proInsurance} onChange={(e) => update("proInsurance", sanitizeNumericInput(e.target.value))} placeholder="0" className={inputSmall("focus:border-emerald-500")} />
-                    </Field>
-                    <Field label="Outros" small>
-                      <input type="text" value={state.proOtherMonthly} onChange={(e) => update("proOtherMonthly", sanitizeNumericInput(e.target.value))} placeholder="0" className={inputSmall("focus:border-emerald-500")} />
-                    </Field>
-                    <div className="col-span-2">
-                      <Field label="Impostos / Taxas (anual)" small>
-                        <input type="text" value={state.proAnnualTaxes} onChange={(e) => update("proAnnualTaxes", sanitizeNumericInput(e.target.value))} placeholder="0" className={inputSmall("focus:border-emerald-500")} />
-                      </Field>
-                    </div>
-                  </div>
-                </details>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <StatBox tone="emerald" label="Lucro Líquido (Real)" value={formatMoney(results.proNetIncome)} />
-                <StatBox tone="emerald" label="Hora Líquida" value={formatMoney(results.proHourlyNet)} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <StatBox tone="emerald" label="KM Líquido" value={formatMoney(results.proKmNet)} />
-                <StatBox tone="emerald" label="Custo Fixo/Dia" value={formatMoney(results.proDailyCost)} />
-              </div>
-            </>
-          ) : user ? (
-            <div className="bg-gradient-to-br from-slate-800 to-indigo-900/30 rounded-xl p-4 shadow-lg border border-indigo-700/30 text-center">
-              <div className="text-[9px] text-indigo-400 uppercase font-bold mb-2 flex items-center justify-center gap-2">
-                <i className="fas fa-crown" /> MetaDriver Pro
-              </div>
-              <p className="text-[11px] text-slate-300 mb-3">Desbloqueie a calculadora completa de custos e tenha uma visão real dos seus ganhos.</p>
-              <p className="text-[9px] text-slate-500 mb-3 leading-relaxed">Financiamento, manutenção, seguro, impostos e muito mais.</p>
-              <button type="button" className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold py-2 px-4 rounded-lg transition-all">
-                <i className="fas fa-star mr-1" /> Seja Pro
-              </button>
-            </div>
-          ) : null}
+
 
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 shadow-lg border border-slate-700">
             <div className="flex justify-between items-end mb-2">
@@ -444,6 +391,15 @@ export function DriverDashboard() {
                   required
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-xs focus:border-blue-500 outline-none placeholder-slate-600"
                 />
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={loginRemember}
+                    onChange={(e) => setLoginRemember(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                  />
+                  <span className="text-[10px] text-slate-400 font-medium">Manter conectado</span>
+                </label>
                 <button
                   type="submit"
                   disabled={loginBusy}

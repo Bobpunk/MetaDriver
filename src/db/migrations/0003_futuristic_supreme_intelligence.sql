@@ -1,0 +1,1 @@
+ALTER TABLE "daily_logs" DROP CONSTRAINT "uq_user_date";

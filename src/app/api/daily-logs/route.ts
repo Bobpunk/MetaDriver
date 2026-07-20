@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { db } from "@/db";
 import { dailyLogs } from "@/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 
 async function getUser(request: NextRequest) {
   const token = request.cookies.get("session")?.value;
@@ -36,54 +36,69 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   }
 
-  const { date, goalAmount, kmDriven, fuelCost, otherExpenses, grossEarnings } =
+  const { date, goalAmount, kmDriven, fuelCost, otherExpenses, grossEarnings, confirmReplace } =
     await request.json();
 
   if (!date) {
     return NextResponse.json({ error: "Data é obrigatória." }, { status: 400 });
   }
 
+  // Check existing records for this day
   const existing = await db
-    .select()
+    .select({
+      id: dailyLogs.id,
+      goalAmount: dailyLogs.goalAmount,
+      kmDriven: dailyLogs.kmDriven,
+      fuelCost: dailyLogs.fuelCost,
+      otherExpenses: dailyLogs.otherExpenses,
+      grossEarnings: dailyLogs.grossEarnings,
+      createdAt: dailyLogs.createdAt,
+    })
     .from(dailyLogs)
     .where(
       and(
         eq(dailyLogs.userEmail, user.email),
         eq(dailyLogs.date, date)
       )
-    );
+    )
+    .orderBy(dailyLogs.createdAt);
 
-  let log;
-  if (existing.length > 0) {
-    const [r] = await db
-      .update(dailyLogs)
-      .set({
-        goalAmount: goalAmount ?? "0",
-        kmDriven: kmDriven ?? "0",
-        fuelCost: fuelCost ?? "0",
-        otherExpenses: otherExpenses ?? "0",
-        grossEarnings: grossEarnings ?? "0",
-      })
-      .where(eq(dailyLogs.id, existing[0].id))
-      .returning();
-    log = r;
-  } else {
-    const [r] = await db
-      .insert(dailyLogs)
-      .values({
-        userEmail: user.email,
-        date,
-        goalAmount: goalAmount ?? "0",
-        kmDriven: kmDriven ?? "0",
-        fuelCost: fuelCost ?? "0",
-        otherExpenses: otherExpenses ?? "0",
-        grossEarnings: grossEarnings ?? "0",
-      })
-      .returning();
-    log = r;
+  // If already 3 records and user hasn't confirmed, ask
+  if (existing.length >= 3 && !confirmReplace) {
+    return NextResponse.json({
+      code: "MAX_LOGS",
+      maxPerDay: 3,
+      oldestLog: existing[0],
+      message: "Máximo de 3 registros por dia. Deseja substituir o mais antigo?",
+    }, { status: 409 });
   }
 
-  return NextResponse.json({ log });
+  // If 3+ records and user confirmed, delete oldest first
+  if (existing.length >= 3 && confirmReplace) {
+    await db.delete(dailyLogs).where(
+      and(
+        eq(dailyLogs.userEmail, user.email),
+        eq(dailyLogs.date, date),
+        eq(dailyLogs.id, existing[0].id)
+      )
+    );
+  }
+
+  // Insert new record
+  const [r] = await db
+    .insert(dailyLogs)
+    .values({
+      userEmail: user.email,
+      date,
+      goalAmount: goalAmount ?? "0",
+      kmDriven: kmDriven ?? "0",
+      fuelCost: fuelCost ?? "0",
+      otherExpenses: otherExpenses ?? "0",
+      grossEarnings: grossEarnings ?? "0",
+    })
+    .returning();
+
+  return NextResponse.json({ log: r, replaced: existing.length >= 3, maxPerDay: 3 });
 }
 
 export async function DELETE(request: NextRequest) {

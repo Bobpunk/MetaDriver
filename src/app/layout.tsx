@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import ClientLayout from "@/components/ClientLayout";
 import "./globals.css";
 
@@ -56,6 +57,9 @@ export default function RootLayout({
           rel="stylesheet"
         />
         <ClientLayout>{children}</ClientLayout>
+        <Script id="unregister-sw" strategy="afterInteractive">
+          {`if("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(r=>r.forEach(r=>r.unregister()))`}
+        </Script>
       </body>
     </html>
   );

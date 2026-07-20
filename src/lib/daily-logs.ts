@@ -14,8 +14,8 @@ export async function fetchLogs(
 }
 
 export async function saveLog(
-  log: Omit<DailyLog, "id" | "createdAt">
-): Promise<{ ok: boolean; log?: DailyLog; error?: string }> {
+  log: Omit<DailyLog, "id" | "createdAt"> & { confirmReplace?: boolean }
+): Promise<{ ok: boolean; log?: DailyLog; replaced?: boolean; maxPerDay?: number; code?: string; message?: string; oldestLog?: DailyLog; error?: string }> {
   try {
     const res = await fetch("/api/daily-logs", {
       method: "POST",
@@ -23,8 +23,13 @@ export async function saveLog(
       body: JSON.stringify(log),
     });
     const data = await res.json();
-    if (!res.ok) return { ok: false, error: data.error || "Erro ao salvar" };
-    return { ok: true, log: data.log };
+    if (!res.ok) {
+      if (res.status === 409 && data.code === "MAX_LOGS") {
+        return { ok: false, code: "MAX_LOGS", message: data.message, oldestLog: data.oldestLog, maxPerDay: data.maxPerDay };
+      }
+      return { ok: false, error: data.error || "Erro ao salvar" };
+    }
+    return { ok: true, log: data.log, replaced: data.replaced, maxPerDay: data.maxPerDay };
   } catch {
     return { ok: false, error: "Erro de conexão." };
   }

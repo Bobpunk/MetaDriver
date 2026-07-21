@@ -19,7 +19,6 @@ import {
   TrendingDown,
   Wallet,
   Calendar,
-  Target,
   Flame,
   ChevronLeft,
   ChevronRight,
@@ -32,7 +31,9 @@ import {
 } from "lucide-react";
 import type { DailyLog } from "@/lib/types";
 import { fetchLogs, saveLog, deleteLog } from "@/lib/daily-logs";
+import { fetchSettings } from "@/lib/user-settings";
 import { formatMoney } from "@/lib/driver";
+import type { CostSettings, WorkSettings } from "./SettingsPanel";
 
 type Period = "today" | "week" | "month" | "year";
 
@@ -45,6 +46,18 @@ const PERIODS: { id: Period; label: string }[] = [
 
 function toNum(s: string): number {
   return parseFloat(String(s).replace(",", ".")) || 0;
+}
+
+function calcFuel(
+  kmDriven: string,
+  costs: CostSettings | null
+): number {
+  if (!costs) return 0;
+  const km = toNum(kmDriven);
+  const aut = toNum(costs.autonomia);
+  const preco = toNum(costs.precoPorLitro);
+  if (km === 0 || aut === 0 || preco === 0) return 0;
+  return (km / aut) * preco;
 }
 
 function within(year: number, month: number, day: number, date: Date) {
@@ -153,6 +166,31 @@ export function InsightsDashboard({
     other: "",
     gross: "",
   });
+  const [costs, setCosts] = useState<CostSettings | null>(null);
+  const [workSettings, setWorkSettings] = useState<WorkSettings | null>(null);
+  const [showAgenda, setShowAgenda] = useState(false);
+  const [agendaMonth, setAgendaMonth] = useState(() => new Date());
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (email) {
+      fetchSettings().then((res) => {
+        if (res.ok && res.settings) {
+          setCosts(res.settings.costs);
+          setWorkSettings(res.settings.work);
+        }
+      });
+    }
+  }, [email]);
+
+  useEffect(() => {
+    if (showAgenda && email) {
+      fetchLogs(email).then((res) => {
+        if (res.ok && res.logs) setLogs(res.logs);
+      });
+    }
+  }, [showAgenda, email]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -192,21 +230,19 @@ export function InsightsDashboard({
     let fuel = 0;
     let other = 0;
     let km = 0;
-    let goalSum = 0;
     let bestDay: { date: string; net: number } | null = null;
     let bestStreak = 0;
     let currentStreak = 0;
 
     filtered.forEach((l) => {
       const g = toNum(l.grossEarnings);
-      const f = toNum(l.fuelCost);
+      const f = calcFuel(l.kmDriven, costs);
       const o = toNum(l.otherExpenses);
       const net = g - f - o;
       gross += g;
       fuel += f;
       other += o;
       km += toNum(l.kmDriven);
-      goalSum += toNum(l.goalAmount);
       if (!bestDay || net > bestDay.net) bestDay = { date: l.date, net };
 
       if (net > 0) {
@@ -218,8 +254,6 @@ export function InsightsDashboard({
     });
 
     const net = gross - fuel - other;
-    const goalHit = goalSum > 0 ? gross >= goalSum : false;
-    const achievement = goalSum > 0 ? Math.min(100, (gross / goalSum) * 100) : 0;
 
     return {
       gross,
@@ -227,14 +261,11 @@ export function InsightsDashboard({
       fuel,
       other,
       km,
-      goalSum,
       count: filtered.length,
       bestDay,
       bestStreak,
-      achievement,
-      goalHit,
     };
-  }, [filtered]);
+  }, [filtered, costs]);
 
   const chartData = useMemo(() => {
     return filtered.map((l) => {
@@ -304,7 +335,7 @@ export function InsightsDashboard({
     setSaving(true);
     setError("");
     setReplaceWarning("");
-    const payload = {
+    const base = {
       userEmail: email,
       date: form.date,
       goalAmount: form.goal,
@@ -313,13 +344,11 @@ export function InsightsDashboard({
       otherExpenses: form.other,
       grossEarnings: form.gross,
     };
+    const payload = editingId ? { ...base, id: editingId } : base;
     const res = await saveLog(payload);
     setSaving(false);
     if (res.ok) {
-      if (res.replaced) {
-        setReplaceWarning("Limite de 3 registros por dia. O registro mais antigo foi substituído.");
-        setTimeout(() => setReplaceWarning(""), 5000);
-      }
+      
       closeForm();
       load();
     } else if (res.code === "MAX_LOGS" && res.oldestLog) {
@@ -363,6 +392,31 @@ export function InsightsDashboard({
     if (!confirm("Excluir este registro?")) return;
     const res = await deleteLog(id);
     if (res.ok) load();
+  }
+
+  async function handleDeleteFromAgenda(id: number) {
+    setPendingDeleteId(null);
+    const res = await deleteLog(id);
+    if (res.ok) load();
+  }
+
+  function handleEditFromAgenda(log: DailyLog) {
+    setShowAgenda(false);
+    openEditForm(log);
+  }
+
+  function handleNewFromAgenda(date: string) {
+    setShowAgenda(false);
+    setEditingId(null);
+    setForm({
+      date,
+      goal: "",
+      km: "",
+      fuel: "",
+      other: "",
+      gross: "",
+    });
+    setShowForm(true);
   }
 
   const isTodayInPeriod = useMemo(() => {
@@ -447,13 +501,13 @@ export function InsightsDashboard({
         </div>
       </div>
 
-      {/* New record button */}
+      {/* Agenda button */}
       <button
-        onClick={openNewForm}
+        onClick={() => { setShowAgenda(true); setSelectedDay(null); }}
         type="button"
         className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white text-[11px] font-bold py-2.5 rounded-xl shadow-lg shadow-blue-900/20 flex justify-center items-center gap-2 transition-all active:scale-95 border border-white/10"
       >
-        <Plus size={14} /> Adicionar Registro
+        <Plus size={14} /> Adicionar / Editar Registro
       </button>
 
       {replaceWarning && (
@@ -508,52 +562,6 @@ export function InsightsDashboard({
               icon={<Calendar size={12} />}
             />
           </div>
-
-          {/* Goal achievement bar */}
-          {stats.goalSum > 0 && (
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-3 shadow-lg border border-slate-700/50">
-              <div className="flex justify-between items-center mb-2">
-                <div className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1.5">
-                  <Target size={11} /> Meta do Período
-                </div>
-                <div
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    stats.goalHit
-                      ? "bg-emerald-600/20 text-emerald-400"
-                      : "bg-blue-600/20 text-blue-400"
-                  }`}
-                >
-                  {stats.goalHit ? "BATIDA" : `${stats.achievement.toFixed(0)}%`}
-                </div>
-              </div>
-              <div className="flex justify-between items-end mb-1.5">
-                <div>
-                  <div className="text-[9px] text-slate-500 uppercase font-bold">Realizado</div>
-                  <div className="text-sm font-black text-white">
-                    {formatMoney(stats.gross)}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[9px] text-slate-500 uppercase font-bold">Meta</div>
-                  <div className="text-sm font-bold text-slate-300">
-                    {formatMoney(stats.goalSum)}
-                  </div>
-                </div>
-              </div>
-              <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${stats.achievement}%` }}
-                  transition={{ duration: 0.8, ease: "easeOut" }}
-                  className={`h-full rounded-full ${
-                    stats.goalHit
-                      ? "bg-gradient-to-r from-emerald-500 to-cyan-400"
-                      : "bg-gradient-to-r from-blue-600 to-cyan-500"
-                  }`}
-                />
-              </div>
-            </div>
-          )}
 
           {/* Net profit chart */}
           {chartData.length > 1 && (
@@ -743,7 +751,7 @@ export function InsightsDashboard({
               <div className="w-10 h-10 mx-auto mb-3 rounded-xl bg-amber-500/20 flex items-center justify-center">
                 <Trash2 size={18} className="text-amber-400" />
               </div>
-              <h3 className="text-sm font-bold text-white mb-1">Limite de registros</h3>
+              
               <p className="text-[11px] text-slate-400 mb-2">
                 Máximo de <strong className="text-white">3 registros</strong> por dia.
               </p>
@@ -765,6 +773,214 @@ export function InsightsDashboard({
                 >
                   Substituir
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Agenda Modal */}
+      <AnimatePresence>
+        {showAgenda && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-3"
+            onClick={() => setShowAgenda(false)}
+          >
+            <motion.div
+              initial={{ y: "100%", opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-sm overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+                <h3 className="text-[11px] font-bold text-white uppercase tracking-widest">
+                  Agenda
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowAgenda(false)}
+                  className="p-1 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-4">
+                {/* Month navigation */}
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setAgendaMonth(new Date(agendaMonth.getFullYear(), agendaMonth.getMonth() - 1, 1))}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span className="text-xs font-bold text-white">
+                    {agendaMonth.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAgendaMonth(new Date(agendaMonth.getFullYear(), agendaMonth.getMonth() + 1, 1))}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+
+                {/* Day headers */}
+                <div className="grid grid-cols-7 gap-1 mb-1">
+                  {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
+                    <div key={d} className="text-[8px] text-slate-500 font-bold uppercase text-center py-1">
+                      {d}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Calendar grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {(() => {
+                    const year = agendaMonth.getFullYear();
+                    const month = agendaMonth.getMonth();
+                    const firstDay = new Date(year, month, 1).getDay();
+                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+                    const today = new Date().toISOString().slice(0, 10);
+                    const cells: React.ReactNode[] = [];
+
+                    for (let i = 0; i < firstDay; i++) {
+                      cells.push(<div key={`empty-${i}`} />);
+                    }
+
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                      const dayLogs = logs.filter((l) => l.date === dateStr);
+                      const count = dayLogs.length;
+                      const isToday = dateStr === today;
+                      const isSelected = dateStr === selectedDay;
+                      const day = new Date(year, month, d).getDay();
+
+                      cells.push(
+                        <button
+                          key={dateStr}
+                          type="button"
+                          onClick={() => setSelectedDay(isSelected ? null : dateStr)}
+                          className={`relative aspect-square rounded-lg text-[10px] font-bold transition-all flex flex-col items-center justify-center ${
+                            isSelected
+                              ? "bg-blue-600 text-white ring-2 ring-blue-400"
+                              : count > 0
+                                ? "bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
+                                : isToday
+                                  ? "bg-slate-700 text-white hover:bg-slate-600"
+                                  : day === 0 || day === 6
+                                    ? "text-slate-600 hover:bg-slate-800"
+                                    : "text-slate-300 hover:bg-slate-800"
+                          }`}
+                        >
+                          <span>{d}</span>
+                          {count > 0 && (
+                            <span className="text-[7px] leading-none mt-0.5 font-bold opacity-70">
+                              {count}x
+                            </span>
+                          )}
+                        </button>
+                      );
+                    }
+
+                    return cells;
+                  })()}
+                </div>
+
+                {/* Selected day logs */}
+                {selectedDay && (
+                  <div className="mt-4 pt-3 border-t border-slate-700/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">
+                        {new Date(selectedDay + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "short" })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleNewFromAgenda(selectedDay)}
+                        className="text-[9px] text-blue-400 hover:text-blue-300 font-bold uppercase flex items-center gap-1"
+                      >
+                        <Plus size={10} /> Novo
+                      </button>
+                    </div>
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {logs
+                        .filter((l) => l.date === selectedDay)
+                        .map((log) => {
+                          const g = toNum(log.grossEarnings);
+                          const f = calcFuel(log.kmDriven, costs);
+                          const o = toNum(log.otherExpenses);
+                          const net = g - f - o;
+                          const isConfirming = pendingDeleteId === log.id;
+                          return (
+                            <div
+                              key={log.id}
+                              className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/30 flex items-center justify-between"
+                            >
+                              {isConfirming ? (
+                                <>
+                                  <span className="text-[9px] text-slate-300 font-bold">
+                                    Excluir este registro?
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteFromAgenda(log.id)}
+                                      className="px-2 py-1 text-[9px] font-bold rounded bg-red-600 text-white hover:bg-red-500"
+                                    >
+                                      Sim
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPendingDeleteId(null)}
+                                      className="px-2 py-1 text-[9px] font-bold rounded bg-slate-700 text-slate-300 hover:bg-slate-600"
+                                    >
+                                      Não
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-2 text-[9px] text-slate-400">
+                                    <span>
+                                      Bruto <strong className="text-white">{formatMoney(g)}</strong>
+                                    </span>
+                                    <span>
+                                      Líq <strong className={net >= 0 ? "text-emerald-400" : "text-red-400"}>{formatMoney(net)}</strong>
+                                    </span>
+                                    <span className="text-slate-600">KM {log.kmDriven}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditFromAgenda(log)}
+                                      className="p-1 text-slate-500 hover:text-blue-400 transition-colors"
+                                    >
+                                      <Pencil size={11} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPendingDeleteId(log.id)}
+                                      className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                                    >
+                                      <Trash2 size={11} />
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

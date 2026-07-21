@@ -14,7 +14,17 @@ export async function fetchLogs(
 }
 
 export async function saveLog(
-  log: Omit<DailyLog, "id" | "createdAt"> & { confirmReplace?: boolean }
+  log: {
+    id?: number;
+    userEmail: string;
+    date: string;
+    goalAmount: string;
+    kmDriven: string;
+    fuelCost: string;
+    otherExpenses: string;
+    grossEarnings: string;
+    confirmReplace?: boolean;
+  }
 ): Promise<{ ok: boolean; log?: DailyLog; replaced?: boolean; maxPerDay?: number; code?: string; message?: string; oldestLog?: DailyLog; error?: string }> {
   try {
     const res = await fetch("/api/daily-logs", {

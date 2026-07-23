@@ -1,0 +1,1 @@
+ALTER TABLE "daily_logs" ADD COLUMN "worked_ms" varchar(50) DEFAULT '0' NOT NULL;

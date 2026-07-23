@@ -9,18 +9,30 @@ import {
   saveState,
   DEFAULTS,
 } from "@/lib/driver";
-import type { DriverState } from "@/lib/types";
+import type { CompletedJourney, DriverState, JourneyState } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
-import { CampaignModal } from "./CampaignModal";
 import { HelpModal } from "./HelpModal";
 import { ShareButton } from "./ShareButton";
 import { InsightsDashboard } from "./InsightsDashboard";
 import { SettingsPanel } from "./SettingsPanel";
-import { useTimedPopup } from "@/hooks/useTimedPopup";
+import { JourneyControl } from "./JourneyControl";
+import {
+  DEFAULT_JOURNEY,
+  currentWeakWindow,
+  effectiveWorkedMs,
+  finishActivePause,
+  hourlyReference,
+  isDeadHourWarning,
+  loadJourney,
+  saveCompletedJourneyLocal,
+  saveJourney,
+} from "@/lib/journey";
+import { saveLog } from "@/lib/daily-logs";
 
 const NUMERIC_INPUTS: (keyof DriverState)[] = [
   "uberInput",
   "ninenineInput",
+  "indriveInput",
   "tipsInput",
   "proFinancing",
   "proMaintenance",
@@ -33,7 +45,9 @@ export function DriverDashboard() {
   const [state, setState] = useState<DriverState>(DEFAULTS);
   const [hydrated, setHydrated] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
-  const [campaignOpen, setCampaignOpen] = useState(false);
+  const [journey, setJourney] = useState<JourneyState>(DEFAULT_JOURNEY);
+  const [endingJourney, setEndingJourney] = useState(false);
+  const [journeyError, setJourneyError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tab, setTab] = useState<"painel" | "insights">("painel");
@@ -47,6 +61,7 @@ export function DriverDashboard() {
 
   useEffect(() => {
     setState(loadState());
+    setJourney(loadJourney());
     setHydrated(true);
   }, []);
 
@@ -56,13 +71,35 @@ export function DriverDashboard() {
   }, [state, hydrated]);
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30000);
+    if (!hydrated) return;
+    saveJourney(journey);
+  }, [journey, hydrated]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 10000);
     return () => clearInterval(t);
   }, []);
 
-  useTimedPopup(() => setCampaignOpen(true), hydrated);
-
-  const results = useMemo(() => calculate(state, now), [state, now]);
+  const workedMs = useMemo(
+    () => effectiveWorkedMs(journey, now),
+    [journey, now]
+  );
+  const results = useMemo(
+    () => calculate(state, now, workedMs),
+    [state, now, workedMs]
+  );
+  const reference = useMemo(
+    () =>
+      hourlyReference(
+        results.hourlyGross,
+        results.gross,
+        now,
+        journey.raining
+      ),
+    [journey.raining, now, results.gross, results.hourlyGross]
+  );
+  const weakWindow = useMemo(() => currentWeakWindow(now), [now]);
+  const deadHourWarning = useMemo(() => isDeadHourWarning(now), [now]);
 
   function update<K extends keyof DriverState>(key: K, value: string) {
     setState((prev) => ({
@@ -71,20 +108,140 @@ export function DriverDashboard() {
     }));
   }
 
-  function resetData() {
+  function updateStartTime(value: string) {
+    update("startTime", value);
+    if (journey.status === "idle" || !journey.startedAt) return;
+    const [hours, minutes] = value.split(":").map(Number);
+    const adjusted = new Date(journey.startedAt);
+    adjusted.setHours(hours || 0, minutes || 0, 0, 0);
+    setJourney((prev) => ({
+      ...prev,
+      startedAt: adjusted.toISOString(),
+    }));
+  }
+
+  function startJourney() {
+    const startedAt = new Date();
+    setNow(startedAt);
+    setJourney({
+      status: "active",
+      startedAt: startedAt.toISOString(),
+      pauseStartedAt: null,
+      pausePlannedUntil: null,
+      pausedMs: 0,
+      raining: false,
+    });
+    setState((prev) => ({
+      ...prev,
+      startTime: startedAt.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }),
+      uberInput: "",
+      ninenineInput: "",
+      indriveInput: "",
+      tipsInput: "",
+      kmInput: "",
+    }));
+    setJourneyError("");
+  }
+
+  function pauseJourney(minutes: number) {
+    const pauseStartedAt = new Date();
+    setNow(pauseStartedAt);
+    setJourney((prev) => ({
+      ...prev,
+      status: "paused",
+      pauseStartedAt: pauseStartedAt.toISOString(),
+      pausePlannedUntil: new Date(
+        pauseStartedAt.getTime() + minutes * 60000
+      ).toISOString(),
+    }));
+  }
+
+  function resumeJourney() {
+    const resumedAt = new Date();
+    setNow(resumedAt);
+    setJourney((prev) => finishActivePause(prev, resumedAt));
+  }
+
+  function localDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  async function endJourney() {
     if (
-      confirm(
-        "Tem certeza que deseja zerar os valores de hoje? (Preço e Consumo serão mantidos)"
+      !confirm(
+        "Encerrar esta jornada? Os valores serão congelados e salvos no histórico."
       )
     ) {
-      setState((prev) => ({
-        ...prev,
-        uberInput: "",
-        ninenineInput: "",
-        tipsInput: "",
-        kmInput: "",
-      }));
+      return;
     }
+
+    const endedAt = new Date();
+    const completedState = finishActivePause(journey, endedAt);
+    const completedWorkedMs = effectiveWorkedMs(completedState, endedAt);
+    const completedResults = calculate(state, endedAt, completedWorkedMs);
+    setEndingJourney(true);
+    setJourneyError("");
+
+    if (user) {
+      const saved = await saveLog({
+        userEmail: user.email,
+        date: localDate(endedAt),
+        goalAmount: state.goalAmount,
+        kmDriven: state.kmInput,
+        fuelCost: String(completedResults.fuelCost),
+        otherExpenses: "0",
+        grossEarnings: String(completedResults.gross),
+      });
+      if (!saved.ok) {
+        setEndingJourney(false);
+        setJourneyError(
+          saved.error ||
+            "Não foi possível salvar a jornada. Seus dados continuam no painel."
+        );
+        return;
+      }
+    }
+
+    const completed: CompletedJourney = {
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : String(endedAt.getTime()),
+      date: localDate(endedAt),
+      startedAt: completedState.startedAt || endedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      pausedMs: completedState.pausedMs,
+      workedMs: completedWorkedMs,
+      gross: completedResults.gross,
+      hourlyGross: completedResults.hourlyGross,
+      goalAmount: Number(state.goalAmount) || 0,
+      kmDriven: Number(state.kmInput) || 0,
+      fuelCost: completedResults.fuelCost,
+    };
+    saveCompletedJourneyLocal(completed);
+
+    setJourney(DEFAULT_JOURNEY);
+    setState((prev) => ({
+      ...prev,
+      startTime: endedAt.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }),
+      uberInput: "",
+      ninenineInput: "",
+      indriveInput: "",
+      tipsInput: "",
+      kmInput: "",
+    }));
+    setEndingJourney(false);
   }
 
   const { user, login, register, logout } = useAuth();
@@ -212,6 +369,29 @@ export function DriverDashboard() {
           </div>
         </div>
         <Header gross={results.gross} net={results.netIncome} />
+        <div className="mb-3">
+          <JourneyControl
+            journey={journey}
+            now={now}
+            workedMs={workedMs}
+            hourlyGross={results.hourlyGross}
+            reference={reference.final}
+            peak={reference.peak}
+            weakWindow={journey.status === "active" ? weakWindow : null}
+            deadHourWarning={
+              journey.status === "active" && deadHourWarning
+            }
+            ending={endingJourney}
+            error={journeyError}
+            onStart={startJourney}
+            onToggleRain={() =>
+              setJourney((prev) => ({ ...prev, raining: !prev.raining }))
+            }
+            onPause={pauseJourney}
+            onResume={resumeJourney}
+            onEnd={endJourney}
+          />
+        </div>
 
         {tab === "insights" && user ? (
           <InsightsDashboard
@@ -229,7 +409,7 @@ export function DriverDashboard() {
                 <input
                   type="time"
                   value={state.startTime}
-                  onChange={(e) => update("startTime", e.target.value)}
+                  onChange={(e) => updateStartTime(e.target.value)}
                   className={inputCls("focus:border-blue-500")}
                 />
               </Field>
@@ -247,9 +427,7 @@ export function DriverDashboard() {
                   value={state.kmInput}
                   placeholder="0"
                   onChange={(e) => update("kmInput", e.target.value)}
-                  className={inputCls(
-                    "border-l-4 border-l-purple-500 focus:border-purple-500"
-                  )}
+                  className={inputCls("focus:border-blue-500")}
                 />
               </Field>
             </div>
@@ -283,14 +461,15 @@ export function DriverDashboard() {
             </details>
           </div>
 
-          <div className="bg-slate-800 rounded-xl p-4 shadow-xl border-l-4 border-blue-500 relative overflow-hidden">
-            <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <div className="bg-slate-800 rounded-xl p-3 shadow-xl border border-slate-700 relative overflow-hidden">
+            <h2 className="text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2">
               <i className="fas fa-wallet text-blue-500" /> Lançamentos (Brutos)
             </h2>
-            <div className="grid grid-cols-3 gap-3">
-              <LabeledInput label="Uber" value={state.uberInput} onChange={(v) => update("uberInput", v)} tone="white" />
-              <LabeledInput label="99Pop" value={state.ninenineInput} onChange={(v) => update("ninenineInput", v)} tone="yellow-500" />
-              <LabeledInput label="Extra" value={state.tipsInput} onChange={(v) => update("tipsInput", v)} tone="emerald-500" />
+            <div className="divide-y divide-slate-700">
+              <PlatformInput label="Uber" value={state.uberInput} onChange={(v) => update("uberInput", v)} brand="uber" />
+              <PlatformInput label="99Pop" value={state.ninenineInput} onChange={(v) => update("ninenineInput", v)} brand="99" />
+              <PlatformInput label="inDrive" value={state.indriveInput} onChange={(v) => update("indriveInput", v)} brand="indrive" />
+              <PlatformInput label="Extra" value={state.tipsInput} onChange={(v) => update("tipsInput", v)} brand="extra" />
             </div>
           </div>
 
@@ -331,28 +510,9 @@ export function DriverDashboard() {
       </div>
 
       <div className="flex flex-col items-center gap-3 mt-2">
-        <button
-          type="button"
-          onClick={resetData}
-          data-share-exclude="true"
-          className="text-[10px] text-slate-500 hover:text-red-400 transition-colors uppercase font-bold tracking-wider border border-slate-700/50 hover:border-red-900/50 rounded-lg px-4 py-2 w-full"
-        >
-          <i className="fas fa-trash-alt mr-2" /> Reiniciar
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setCampaignOpen(true)}
-          data-share-exclude="true"
-          className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold py-3.5 rounded-xl shadow-lg shadow-purple-900/20 animate-pulse flex justify-center items-center gap-2 transition-all active:scale-95 border border-white/10"
-        >
-          <i className="fas fa-rocket" /> AJUDE A CRIAR O APP OFICIAL
-        </button>
-
         <ShareButton targetRef={dashboardRef} />
       </div>
 
-      <CampaignModal open={campaignOpen} onClose={() => setCampaignOpen(false)} />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
@@ -541,7 +701,7 @@ function Header({ gross, net }: { gross: number; net: number }) {
           </div>
           <div className="text-right bg-slate-800 px-3 py-1.5 rounded-lg border border-emerald-500/20 shadow-sm">
             <div className="text-[9px] text-slate-400 uppercase font-bold mb-0.5">
-              Líquido
+              Saldo após combustível
             </div>
             <div className="text-sm font-black text-emerald-400 leading-none">
               {formatMoney(net)}
@@ -587,45 +747,79 @@ function inputSmall(extra = "") {
   return `${inputBase} rounded p-2 ${extra}`;
 }
 
-function LabeledInput({
+function PlatformInput({
   label,
   value,
   onChange,
-  tone,
+  brand,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  tone: "white" | "yellow-500" | "emerald-500";
+  brand: "uber" | "99" | "indrive" | "extra";
 }) {
-  const ringClass =
-    tone === "white"
-      ? "focus:border-white focus:ring-1 focus:ring-white"
-      : tone === "yellow-500"
-      ? "focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
-      : "focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
-  const labelClass =
-    tone === "yellow-500"
-      ? "text-yellow-500/80"
-      : tone === "emerald-500"
-      ? "text-emerald-500/80"
-      : "text-slate-400";
   return (
-    <div className="relative group">
+    <label className="flex min-h-14 items-center gap-3 py-2">
+      <BrandIcon brand={brand} />
+      <span className="min-w-20 text-base font-semibold text-slate-100">
+        {label}
+      </span>
+      <span className="ml-auto text-sm text-slate-400">R$</span>
       <input
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         value={value}
         placeholder="0"
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full bg-slate-900 border border-slate-700 rounded-xl pt-5 pb-2 px-1 text-center font-bold text-lg text-white transition-all ${ringClass}`}
+        aria-label={`Ganhos ${label}`}
+        className="min-h-11 w-28 rounded-lg border border-slate-600 bg-slate-900 px-3 text-right text-base font-semibold tabular-nums text-white transition-colors placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
       />
+    </label>
+  );
+}
+
+function BrandIcon({
+  brand,
+}: {
+  brand: "uber" | "99" | "indrive" | "extra";
+}) {
+  if (brand === "uber") {
+    return (
       <span
-        className={`absolute top-1.5 left-0 w-full text-center text-[9px] ${labelClass} uppercase font-bold pointer-events-none`}
+        aria-hidden="true"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-black text-[10px] font-bold tracking-tight text-white"
       >
-        {label}
+        UBER
       </span>
-    </div>
+    );
+  }
+  if (brand === "99") {
+    return (
+      <span
+        aria-hidden="true"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#ffdd00] text-xl font-black tracking-tighter text-[#121212]"
+      >
+        99
+      </span>
+    );
+  }
+  if (brand === "indrive") {
+    return (
+      <span
+        aria-hidden="true"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#b7f000] text-sm font-black tracking-tighter text-[#162100]"
+      >
+        in
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-2xl font-semibold text-white"
+    >
+      +
+    </span>
   );
 }
 

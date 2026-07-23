@@ -6,6 +6,7 @@ export type DriverState = {
   consumption: string;
   uberInput: string;
   ninenineInput: string;
+  indriveInput: string;
   tipsInput: string;
   proFinancing: string;
   proMaintenance: string;
@@ -33,6 +34,31 @@ export type DriverResults = {
   proDailyCost: number;
 };
 
+export type JourneyStatus = "idle" | "active" | "paused";
+
+export type JourneyState = {
+  status: JourneyStatus;
+  startedAt: string | null;
+  pauseStartedAt: string | null;
+  pausePlannedUntil: string | null;
+  pausedMs: number;
+  raining: boolean;
+};
+
+export type CompletedJourney = {
+  id: string;
+  date: string;
+  startedAt: string;
+  endedAt: string;
+  pausedMs: number;
+  workedMs: number;
+  gross: number;
+  hourlyGross: number;
+  goalAmount: number;
+  kmDriven: number;
+  fuelCost: number;
+};
+
 export type DailyLog = {
   id: number;
   userEmail: string;
@@ -43,20 +69,4 @@ export type DailyLog = {
   otherExpenses: string;
   grossEarnings: string;
   createdAt: string;
-};
-
-export type CampaignConfig = {
-  raised: number;
-  goalMax: number;
-  notifyUrl: string;
-  pixPayload: string;
-  pixKey: string;
-};
-
-export type Milestone = {
-  goal: number;
-  label: string;
-  amount: string;
-  icon: string;
-  brand: boolean;
 };

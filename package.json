@@ -4,11 +4,12 @@
   "private": true,
   "description": "MetaDriver | Seu Copiloto de Lucros",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -24,7 +25,6 @@
     "lucide-react": "^1.25.0",
     "next": "14.2.15",
     "pg": "^8.22.0",
-    "qrcode.react": "^4.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^3.9.2"
@@ -42,6 +42,7 @@
     "eslint-config-next": "14.2.15",
     "postcss": "^8.4.47",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.6.3"
   }
 }

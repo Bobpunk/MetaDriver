@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   consumption: "drv_cons",
   uberInput: "drv_uber",
   ninenineInput: "drv_99",
+  indriveInput: "drv_indrive",
   tipsInput: "drv_tips",
   proFinancing: "drv_pro_fin",
   proMaintenance: "drv_pro_maint",
@@ -24,6 +25,7 @@ export const DEFAULTS: DriverState = {
   consumption: "10",
   uberInput: "",
   ninenineInput: "",
+  indriveInput: "",
   tipsInput: "",
   proFinancing: "",
   proMaintenance: "",
@@ -70,10 +72,15 @@ export function formatMoney(n: number): string {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export function calculate(state: DriverState, now = new Date()): DriverResults {
+export function calculate(
+  state: DriverState,
+  now = new Date(),
+  workedMsOverride?: number
+): DriverResults {
   const gross =
     parseMath(state.uberInput) +
     parseMath(state.ninenineInput) +
+    parseMath(state.indriveInput) +
     parseMath(state.tipsInput);
 
   const km = parseMath(state.kmInput);
@@ -84,12 +91,16 @@ export function calculate(state: DriverState, now = new Date()): DriverResults {
   const fuelCost = liters * fuelPrice;
   const netIncome = gross - fuelCost;
 
-  const [h, m] = state.startTime.split(":").map(Number);
-  const startDt = new Date(now);
-  startDt.setHours(h || 0, m || 0, 0, 0);
-
-  let diffMins = (now.getTime() - startDt.getTime()) / 60000;
-  if (diffMins < 0) diffMins = 0;
+  let diffMins: number;
+  if (workedMsOverride !== undefined) {
+    diffMins = Math.max(0, workedMsOverride / 60000);
+  } else {
+    const [h, m] = state.startTime.split(":").map(Number);
+    const startDt = new Date(now);
+    startDt.setHours(h || 0, m || 0, 0, 0);
+    diffMins = (now.getTime() - startDt.getTime()) / 60000;
+    if (diffMins < 0) diffMins = 0;
+  }
   const hoursDec = diffMins / 60;
 
   const workedHours = Math.floor(diffMins / 60);

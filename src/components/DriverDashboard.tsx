@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   calculate,
   formatMoney,
@@ -11,12 +11,16 @@ import {
 } from "@/lib/driver";
 import type { CompletedJourney, DriverState, JourneyState } from "@/lib/types";
 import { useAuth } from "@/contexts/AuthContext";
-import { HelpModal } from "./HelpModal";
 import { ShareButton } from "./ShareButton";
 import { InsightsDashboard } from "./InsightsDashboard";
 import { JourneyHistory } from "./JourneyHistory";
 import { SettingsPanel } from "./SettingsPanel";
 import { JourneyControl } from "./JourneyControl";
+import {
+  GuidedTour,
+  TOUR_VERSION,
+  type TourStep,
+} from "./GuidedTour";
 import {
   DEFAULT_JOURNEY,
   currentWeakWindow,
@@ -51,7 +55,7 @@ export function DriverDashboard() {
   const [journey, setJourney] = useState<JourneyState>(DEFAULT_JOURNEY);
   const [endingJourney, setEndingJourney] = useState(false);
   const [journeyError, setJourneyError] = useState("");
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [tab, setTab] = useState<"painel" | "insights" | "historico">("painel");
@@ -111,6 +115,50 @@ export function DriverDashboard() {
       window.localStorage.setItem("metadriver_goal_date", today);
     });
   }, [hydrated, settingsRevision, user]);
+
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    const storageKey = `${TOUR_VERSION}:${user.email}`;
+    if (window.localStorage.getItem(storageKey)) return;
+    const timer = window.setTimeout(() => setTourOpen(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, user]);
+
+  const handleTourStep = useCallback((step: TourStep) => {
+    if (step.id === "dashboard") {
+      setSettingsOpen(false);
+      setTab("insights");
+      return;
+    }
+    if (step.id === "history") {
+      setSettingsOpen(false);
+      setTab("historico");
+      return;
+    }
+    if (step.id.startsWith("profile-")) {
+      setTab("painel");
+      setSettingsOpen(true);
+      return;
+    }
+    setSettingsOpen(false);
+    setTab("painel");
+  }, []);
+
+  function finishTour() {
+    if (user) {
+      window.localStorage.setItem(`${TOUR_VERSION}:${user.email}`, "completed");
+    }
+    setSettingsOpen(false);
+    setTourOpen(false);
+  }
+
+  function dismissTour() {
+    if (user) {
+      window.localStorage.setItem(`${TOUR_VERSION}:${user.email}`, "dismissed");
+    }
+    setSettingsOpen(false);
+    setTourOpen(false);
+  }
 
   const workedMs = useMemo(
     () => effectiveWorkedMs(journey, now),
@@ -341,7 +389,7 @@ export function DriverDashboard() {
       <div ref={dashboardRef} className="relative">
         <div className="flex justify-between items-center gap-2 mb-2">
           {user ? (
-            <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
+            <div data-tour="navigation" className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
               <button
                 onClick={() => setTab("painel")}
                 className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md transition-all ${tab === "painel" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}
@@ -380,11 +428,14 @@ export function DriverDashboard() {
               </button>
             )}
             <button
-              onClick={() => setHelpOpen(true)}
+              onClick={() => {
+                setSettingsOpen(false);
+                setTourOpen(true);
+              }}
               className="text-[9px] text-slate-400 hover:text-blue-400 transition-colors flex items-center gap-1 font-bold uppercase tracking-wider"
               type="button"
             >
-              <i className="fas fa-circle-question text-[10px]" /> Ajuda
+              <i className="fas fa-compass text-[10px]" /> Ver tour
             </button>
 
           {user ? (
@@ -418,7 +469,7 @@ export function DriverDashboard() {
         ) : (
         <div>
           <Header gross={results.gross} net={results.netIncome} />
-          <div className="mb-3 mt-3">
+          <div data-tour="journey" className="mb-3 mt-3">
             <JourneyControl
               journey={journey}
               now={now}
@@ -441,7 +492,7 @@ export function DriverDashboard() {
               onEnd={endJourney}
             />
           </div>
-          <div className="bg-slate-800 rounded-xl p-3 shadow-lg border border-slate-700/50">
+          <div data-tour="daily-fields" className="bg-slate-800 rounded-xl p-3 shadow-lg border border-slate-700/50">
             <div className="grid grid-cols-3 gap-3">
               <Field label="INÍCIO">
                 <input
@@ -470,7 +521,7 @@ export function DriverDashboard() {
               </Field>
             </div>
 
-            <details className="mt-3 group">
+            <details data-tour="fuel" className="mt-3 group">
               <summary className="text-[10px] text-blue-400 font-bold cursor-pointer hover:text-blue-300 flex justify-center items-center gap-2 bg-slate-900/50 rounded py-2 select-none">
                 <i className="fas fa-gas-pump" /> CONFIGURAR COMBUSTÍVEL
               </summary>
@@ -499,7 +550,7 @@ export function DriverDashboard() {
             </details>
           </div>
 
-          <div className="bg-slate-800 rounded-xl p-3 shadow-xl border border-slate-700 relative overflow-hidden">
+          <div data-tour="earnings" className="bg-slate-800 rounded-xl p-3 shadow-xl border border-slate-700 relative overflow-hidden">
             <h2 className="text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2">
               <i className="fas fa-wallet text-blue-500" /> Lançamentos (Brutos)
             </h2>
@@ -511,7 +562,7 @@ export function DriverDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div data-tour="indicators" className="grid grid-cols-2 gap-3">
             <StatBox tone="red" label="Gasolina" value={formatMoney(results.fuelCost)} />
             <StatBox tone="blue" label="Hora Bruta" value={formatMoney(results.hourlyGross)} />
           </div>
@@ -551,7 +602,6 @@ export function DriverDashboard() {
         <ShareButton targetRef={dashboardRef} />
       </div>
 
-      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
       <SettingsPanel
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -559,6 +609,12 @@ export function DriverDashboard() {
           window.localStorage.removeItem("metadriver_goal_date");
           setSettingsRevision((revision) => revision + 1);
         }}
+      />
+      <GuidedTour
+        open={tourOpen}
+        onClose={dismissTour}
+        onComplete={finishTour}
+        onStepChange={handleTourStep}
       />
 
       {showLogin && (

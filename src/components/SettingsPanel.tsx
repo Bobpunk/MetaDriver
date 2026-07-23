@@ -193,6 +193,7 @@ export function SettingsPanel({
                   </div>
                 ) : (
                   <>
+                    <div data-tour="profile-work">
                     <SectionDivider label="Trabalho" />
 
                     <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-950/60 p-1">
@@ -325,6 +326,8 @@ export function SettingsPanel({
                         placeholder="0"
                       />
                     </div>
+                    </div>
+                    <div data-tour="profile-vehicle">
                     <SectionDivider label="Veículo" />
 
                     <div className="flex gap-3 mb-3">
@@ -359,7 +362,9 @@ export function SettingsPanel({
                         refletir valores reais.
                       </div>
                     )}
+                    </div>
 
+                    <div data-tour="profile-costs">
                     <SectionDivider label="Custos Mensais" />
 
                     <div className="space-y-3">
@@ -436,6 +441,7 @@ export function SettingsPanel({
                           placeholder="0"
                         />
                       </div>
+                    </div>
                     </div>
                   </>
                 )}

@@ -345,7 +345,7 @@ export function InsightsDashboard({
     period === "today" ? "Meta diária" : `Meta de ${periodName}`;
 
   return (
-    <section className="flex flex-col gap-3 pb-3" aria-label="Resumo financeiro">
+    <section data-tour="dashboard" className="flex flex-col gap-3 pb-3" aria-label="Resumo financeiro">
       <div className="flex items-center gap-3 px-1 py-2">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
           <TrendingUp size={25} aria-hidden="true" />

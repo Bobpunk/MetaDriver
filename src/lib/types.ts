@@ -68,5 +68,6 @@ export type DailyLog = {
   fuelCost: string;
   otherExpenses: string;
   grossEarnings: string;
+  workedMs: string;
   createdAt: string;
 };

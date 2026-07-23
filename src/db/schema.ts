@@ -18,6 +18,7 @@ export const dailyLogs = pgTable("daily_logs", {
   fuelCost: varchar("fuel_cost", { length: 50 }).notNull().default("0"),
   otherExpenses: varchar("other_expenses", { length: 50 }).notNull().default("0"),
   grossEarnings: varchar("gross_earnings", { length: 50 }).notNull().default("0"),
+  workedMs: varchar("worked_ms", { length: 50 }).notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -23,9 +23,9 @@ export async function saveLog(
     fuelCost: string;
     otherExpenses: string;
     grossEarnings: string;
-    confirmReplace?: boolean;
+    workedMs: string;
   }
-): Promise<{ ok: boolean; log?: DailyLog; replaced?: boolean; maxPerDay?: number; code?: string; message?: string; oldestLog?: DailyLog; error?: string }> {
+): Promise<{ ok: boolean; log?: DailyLog; error?: string }> {
   try {
     const res = await fetch("/api/daily-logs", {
       method: "POST",
@@ -34,27 +34,9 @@ export async function saveLog(
     });
     const data = await res.json();
     if (!res.ok) {
-      if (res.status === 409 && data.code === "MAX_LOGS") {
-        return { ok: false, code: "MAX_LOGS", message: data.message, oldestLog: data.oldestLog, maxPerDay: data.maxPerDay };
-      }
       return { ok: false, error: data.error || "Erro ao salvar" };
     }
-    return { ok: true, log: data.log, replaced: data.replaced, maxPerDay: data.maxPerDay };
-  } catch {
-    return { ok: false, error: "Erro de conexão." };
-  }
-}
-
-export async function deleteLog(
-  id: number
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const res = await fetch(`/api/daily-logs?id=${id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const data = await res.json();
-      return { ok: false, error: data.error || "Erro ao excluir" };
-    }
-    return { ok: true };
+    return { ok: true, log: data.log };
   } catch {
     return { ok: false, error: "Erro de conexão." };
   }

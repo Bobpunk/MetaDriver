@@ -9,7 +9,6 @@ export type WorkSettings = {
   workDays: boolean[];
   hoursPerDay: string;
   weeklyGoal: string;
-  avgKmPerDay: string;
 };
 
 export type VehicleType = "car" | "motorcycle";
@@ -22,8 +21,6 @@ export type CostSettings = {
   annualTaxes: string;
   emergencyFund: string;
   leisure: string;
-  autonomia: string;
-  precoPorLitro: string;
 };
 
 export type AppSettings = {
@@ -37,7 +34,6 @@ const DEFAULTS: AppSettings = {
     workDays: [false, true, true, true, true, true, false],
     hoursPerDay: "8",
     weeklyGoal: "",
-    avgKmPerDay: "",
   },
   vehicle: "car",
   costs: {
@@ -48,8 +44,6 @@ const DEFAULTS: AppSettings = {
     annualTaxes: "",
     emergencyFund: "",
     leisure: "",
-    autonomia: "",
-    precoPorLitro: "",
   },
 };
 
@@ -223,17 +217,6 @@ export function SettingsPanel({
                         placeholder="0"
                       />
                     </div>
-                    <div className="mt-3">
-                      <ConfigField
-                        label="Média km rodados/dia"
-                        value={settings.work.avgKmPerDay}
-                        onChange={(v) =>
-                          update("work", { ...settings.work, avgKmPerDay: v })
-                        }
-                        placeholder="100"
-                      />
-                    </div>
-
                     <SectionDivider label="Veículo" />
 
                     <div className="flex gap-3 mb-3">
@@ -268,27 +251,6 @@ export function SettingsPanel({
                         refletir valores reais.
                       </div>
                     )}
-
-                    <SectionDivider label="Combustível" />
-
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      <ConfigField
-                        label="Autonomia (km/L)"
-                        value={settings.costs.autonomia}
-                        onChange={(v) =>
-                          update("costs", { ...settings.costs, autonomia: v })
-                        }
-                        placeholder="12"
-                      />
-                      <ConfigField
-                        label="Preço por Litro (R$)"
-                        value={settings.costs.precoPorLitro}
-                        onChange={(v) =>
-                          update("costs", { ...settings.costs, precoPorLitro: v })
-                        }
-                        placeholder="6.50"
-                      />
-                    </div>
 
                     <SectionDivider label="Custos Mensais" />
 

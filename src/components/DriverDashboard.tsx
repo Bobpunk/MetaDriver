@@ -28,6 +28,7 @@ import {
   saveJourney,
 } from "@/lib/journey";
 import { saveLog } from "@/lib/daily-logs";
+import { fetchSettings } from "@/lib/user-settings";
 
 const NUMERIC_INPUTS: (keyof DriverState)[] = [
   "uberInput",
@@ -42,6 +43,7 @@ const NUMERIC_INPUTS: (keyof DriverState)[] = [
 ];
 
 export function DriverDashboard() {
+  const { user, login, register, logout } = useAuth();
   const [state, setState] = useState<DriverState>(DEFAULTS);
   const [hydrated, setHydrated] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
@@ -79,6 +81,26 @@ export function DriverDashboard() {
     const t = setInterval(() => setNow(new Date()), 10000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    const today = localDate(new Date());
+    const storedGoalDate = window.localStorage.getItem("metadriver_goal_date");
+    if (storedGoalDate === today) return;
+
+    void fetchSettings().then((result) => {
+      const work = result.settings?.work;
+      const selectedDays = work?.workDays.filter(Boolean).length ?? 0;
+      const weeklyGoal = Number(work?.weeklyGoal) || 0;
+      if (selectedDays > 0 && weeklyGoal > 0) {
+        setState((previous) => ({
+          ...previous,
+          goalAmount: String(weeklyGoal / selectedDays),
+        }));
+      }
+      window.localStorage.setItem("metadriver_goal_date", today);
+    });
+  }, [hydrated, user]);
 
   const workedMs = useMemo(
     () => effectiveWorkedMs(journey, now),
@@ -198,6 +220,7 @@ export function DriverDashboard() {
         fuelCost: String(completedResults.fuelCost),
         otherExpenses: "0",
         grossEarnings: String(completedResults.gross),
+        workedMs: String(completedWorkedMs),
       });
       if (!saved.ok) {
         setEndingJourney(false);
@@ -244,7 +267,6 @@ export function DriverDashboard() {
     setEndingJourney(false);
   }
 
-  const { user, login, register, logout } = useAuth();
   const [loginMode, setLoginMode] = useState<"login" | "register">("login");
 
   async function handleLogin(e: React.FormEvent) {
@@ -308,7 +330,7 @@ export function DriverDashboard() {
     <div className="w-full max-w-md mx-auto flex flex-col gap-3 p-4">
       <div ref={dashboardRef} className="relative">
         <div className="flex justify-between items-center gap-2 mb-2">
-          {user && user.pro ? (
+          {user ? (
             <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
               <button
                 onClick={() => setTab("painel")}
@@ -368,41 +390,34 @@ export function DriverDashboard() {
           )}
           </div>
         </div>
-        <Header gross={results.gross} net={results.netIncome} />
-        <div className="mb-3">
-          <JourneyControl
-            journey={journey}
-            now={now}
-            workedMs={workedMs}
-            hourlyGross={results.hourlyGross}
-            reference={reference.final}
-            peak={reference.peak}
-            weakWindow={journey.status === "active" ? weakWindow : null}
-            deadHourWarning={
-              journey.status === "active" && deadHourWarning
-            }
-            ending={endingJourney}
-            error={journeyError}
-            onStart={startJourney}
-            onToggleRain={() =>
-              setJourney((prev) => ({ ...prev, raining: !prev.raining }))
-            }
-            onPause={pauseJourney}
-            onResume={resumeJourney}
-            onEnd={endJourney}
-          />
-        </div>
-
         {tab === "insights" && user ? (
-          <InsightsDashboard
-            email={user.email}
-            prefillGoal={state.goalAmount}
-            prefillKm={state.kmInput}
-            prefillFuel={String(results.fuelCost)}
-            prefillGross={String(results.gross)}
-          />
+          <InsightsDashboard email={user.email} />
         ) : (
         <div>
+          <Header gross={results.gross} net={results.netIncome} />
+          <div className="mb-3 mt-3">
+            <JourneyControl
+              journey={journey}
+              now={now}
+              workedMs={workedMs}
+              hourlyGross={results.hourlyGross}
+              reference={reference.final}
+              peak={reference.peak}
+              weakWindow={journey.status === "active" ? weakWindow : null}
+              deadHourWarning={
+                journey.status === "active" && deadHourWarning
+              }
+              ending={endingJourney}
+              error={journeyError}
+              onStart={startJourney}
+              onToggleRain={() =>
+                setJourney((prev) => ({ ...prev, raining: !prev.raining }))
+              }
+              onPause={pauseJourney}
+              onResume={resumeJourney}
+              onEnd={endJourney}
+            />
+          </div>
           <div className="bg-slate-800 rounded-xl p-3 shadow-lg border border-slate-700/50">
             <div className="grid grid-cols-3 gap-3">
               <Field label="INÍCIO">

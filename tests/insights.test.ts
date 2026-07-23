@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  calculateDailyProjection,
   calculateFuelProjection,
+  calculateHistoricalRate,
   calculateWorkedCostPerKm,
 } from "../src/lib/insights";
 
@@ -39,4 +41,14 @@ test("dias sem jornada não inflam o custo por km trabalhado", () => {
 
 test("custo por km retorna zero quando não há distância", () => {
   assert.equal(calculateWorkedCostPerKm(137, 5700, 1500, 1, 0), 0);
+});
+
+test("projeta métricas acumulativas pela média diária", () => {
+  assert.equal(calculateDailyProjection(900, 3, 7), 2100);
+  assert.equal(calculateDailyProjection(900, 3, 30), 9000);
+});
+
+test("mantém métricas de taxa como média histórica", () => {
+  assert.equal(calculateHistoricalRate(1200, 40), 30);
+  assert.equal(calculateHistoricalRate(1200, 0), null);
 });

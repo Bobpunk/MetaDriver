@@ -3,19 +3,46 @@ export function calculateFuelProjection(
   daysWithRecords: number,
   horizonDays: number
 ): number | null {
+  return calculateDailyProjection(
+    totalFuelLast30Days,
+    daysWithRecords,
+    horizonDays
+  );
+}
+
+export function calculateDailyProjection(
+  totalLast30Days: number,
+  daysWithRecords: number,
+  horizonDays: number
+): number | null {
   if (
-    !Number.isFinite(totalFuelLast30Days) ||
+    !Number.isFinite(totalLast30Days) ||
     !Number.isFinite(daysWithRecords) ||
     !Number.isFinite(horizonDays) ||
-    totalFuelLast30Days < 0 ||
+    totalLast30Days < 0 ||
     daysWithRecords <= 0 ||
     horizonDays <= 0
   ) {
     return null;
   }
 
-  const dailyAverage = totalFuelLast30Days / daysWithRecords;
+  const dailyAverage = totalLast30Days / daysWithRecords;
   return dailyAverage * horizonDays;
+}
+
+export function calculateHistoricalRate(
+  numerator: number,
+  denominator: number
+): number | null {
+  if (
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    numerator < 0 ||
+    denominator <= 0
+  ) {
+    return null;
+  }
+  return numerator / denominator;
 }
 
 export function calculateWorkedCostPerKm(

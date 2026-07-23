@@ -27,7 +27,9 @@ import { formatMoney } from "@/lib/driver";
 import type { DailyLog } from "@/lib/types";
 import { fetchSettings } from "@/lib/user-settings";
 import {
+  calculateDailyProjection,
   calculateFuelProjection,
+  calculateHistoricalRate,
   calculateWorkedCostPerKm,
 } from "@/lib/insights";
 import type { AppSettings } from "./SettingsPanel";
@@ -279,6 +281,22 @@ export function InsightsDashboard({
       (total, log) => total + numberValue(log.fuelCost),
       0
     );
+    const historicalGross = historyLogs.reduce(
+      (total, log) => total + numberValue(log.grossEarnings),
+      0
+    );
+    const historicalKm = historyLogs.reduce(
+      (total, log) => total + numberValue(log.kmDriven),
+      0
+    );
+    const historicalWorkedMs = historyLogs.reduce(
+      (total, log) => total + numberValue(log.workedMs),
+      0
+    );
+    const historicalJourneyExpenses = historyLogs.reduce(
+      (total, log) => total + numberValue(log.otherExpenses),
+      0
+    );
     const averageFuel =
       historyDates.size > 0 ? historicalFuel / historyDates.size : 0;
     const fuelProjection = calculateFuelProjection(
@@ -286,6 +304,31 @@ export function InsightsDashboard({
       historyDates.size,
       days
     );
+    const historicalWorkedHours = historicalWorkedMs / 3600000;
+    const indicatorProjections = {
+      hourlyGross: calculateHistoricalRate(
+        historicalGross,
+        historicalWorkedHours
+      ),
+      workedMs: calculateDailyProjection(
+        historicalWorkedMs,
+        historyDates.size,
+        days
+      ),
+      grossPerKm: calculateHistoricalRate(historicalGross, historicalKm),
+      costPerKm:
+        historyDates.size > 0 && historicalKm > 0
+          ? calculateWorkedCostPerKm(
+              historicalFuel + historicalJourneyExpenses,
+              monthlyCosts,
+              numberValue(costs?.annualTaxes),
+              historyDates.size,
+              historicalKm
+            )
+          : null,
+      km: calculateDailyProjection(historicalKm, historyDates.size, days),
+      fuel: fuelProjection,
+    };
 
     const scheduleMode = settings?.work.scheduleMode ?? "fixed";
     const cycleWorkDays = configuredCycleWork;
@@ -336,6 +379,7 @@ export function InsightsDashboard({
       goal,
       goalProgress: goal > 0 ? Math.min((gross / goal) * 100, 100) : 0,
       costItems,
+      indicatorProjections,
       hasJourneys: filtered.length > 0,
       projection: {
         profileReady,
@@ -463,32 +507,75 @@ export function InsightsDashboard({
             onOpenSettings={onOpenSettings}
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          <section aria-labelledby="performance-indicators-title">
+            <div className="mb-3 flex items-end justify-between gap-3 px-1">
+              <div>
+                <h2
+                  id="performance-indicators-title"
+                  className="text-base font-bold text-white"
+                >
+                  Indicadores de desempenho
+                </h2>
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  Real do período e projeção pela média de 30 dias
+                </p>
+              </div>
+              <span className="shrink-0 text-[10px] font-semibold text-emerald-400">
+                Real + proj.
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
             <MetricCard
               icon={<Gauge size={19} />}
               label="Hora bruta"
               value={`${formatMoney(report.hourlyGross)}/h`}
+              note={
+                report.indicatorProjections.hourlyGross === null
+                  ? "(proj. —)"
+                  : `(proj. ${formatMoney(report.indicatorProjections.hourlyGross)}/h)`
+              }
             />
             <MetricCard
               icon={<Clock3 size={19} />}
               label="Tempo trabalhado"
               value={formatWorkedTime(report.workedMs)}
+              note={
+                report.indicatorProjections.workedMs === null
+                  ? "(proj. —)"
+                  : `(proj. ${formatWorkedTime(report.indicatorProjections.workedMs)})`
+              }
             />
             <MetricCard
               icon={<MapPinned size={19} />}
               label="Ganho por km"
               value={`${formatMoney(report.grossPerKm)}/km`}
+              note={
+                report.indicatorProjections.grossPerKm === null
+                  ? "(proj. —)"
+                  : `(proj. ${formatMoney(report.indicatorProjections.grossPerKm)}/km)`
+              }
             />
             <MetricCard
               icon={<Fuel size={19} />}
               label="Custo por km trabalhado"
               value={`${formatMoney(report.costPerKm)}/km`}
+              note={
+                report.indicatorProjections.costPerKm !== null
+                  ? `(proj. ${formatMoney(report.indicatorProjections.costPerKm)}/km)`
+                  : "(proj. —)"
+              }
               cost
             />
             <MetricCard
               icon={<Car size={19} />}
               label="Quilômetros"
               value={`${report.km.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`}
+              note={
+                report.indicatorProjections.km === null
+                  ? "(proj. —)"
+                  : `(proj. ${report.indicatorProjections.km.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km)`
+              }
             />
             <MetricCard
               icon={<Fuel size={19} />}
@@ -506,7 +593,8 @@ export function InsightsDashboard({
               }
               cost
             />
-          </div>
+            </div>
+          </section>
 
           <div className="rounded-xl bg-slate-800 p-4 shadow-sm">
             <div className="mb-4 flex items-start justify-between gap-4">
@@ -769,7 +857,7 @@ function MetricCard({
         <p className="text-[11px] leading-tight text-slate-400">{label}</p>
         <p className="mt-1 break-words text-sm font-bold leading-tight text-white">{value}</p>
         {note && (
-          <p className="mt-1 text-[10px] font-semibold leading-tight text-slate-400">
+          <p className="mt-1 text-[10px] font-semibold leading-tight text-emerald-400">
             {note}
           </p>
         )}

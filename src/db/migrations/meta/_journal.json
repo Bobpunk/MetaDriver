@@ -43,6 +43,13 @@
       "when": 1784806882881,
       "tag": "0005_swift_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784809269170,
+      "tag": "0006_curious_bloodscream",
+      "breakpoints": true
     }
   ]
 }

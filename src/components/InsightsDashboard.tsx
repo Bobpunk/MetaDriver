@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Banknote,
+  Calculator,
   CalendarDays,
   Car,
   Clock3,
+  CircleCheck,
   Fuel,
   Gauge,
   Landmark,
@@ -67,6 +70,17 @@ function percentage(value: number, total: number): number {
   return Math.round((value / total) * 100);
 }
 
+function countFixedWorkDays(workDays: boolean[], days: number, from = new Date()) {
+  let count = 0;
+  const cursor = new Date(from);
+  cursor.setHours(12, 0, 0, 0);
+  for (let index = 0; index < days; index += 1) {
+    if (workDays[cursor.getDay()]) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
 type CostItem = {
   key: string;
   label: string;
@@ -74,7 +88,13 @@ type CostItem = {
   icon: React.ReactNode;
 };
 
-export function InsightsDashboard({ email }: { email: string }) {
+export function InsightsDashboard({
+  email,
+  onOpenSettings,
+}: {
+  email: string;
+  onOpenSettings: () => void;
+}) {
   const [period, setPeriod] = useState<Period>("today");
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -104,6 +124,7 @@ export function InsightsDashboard({ email }: { email: string }) {
       const date = new Date(`${log.date}T12:00:00`);
       return date >= start && date <= end;
     });
+    const workedDates = new Set(filtered.map((log) => log.date));
 
     const gross = filtered.reduce(
       (total, log) => total + numberValue(log.grossEarnings),
@@ -134,6 +155,14 @@ export function InsightsDashboard({ email }: { email: string }) {
     const emergencyFund = (numberValue(costs?.emergencyFund) / 30) * days;
     const leisure = (numberValue(costs?.leisure) / 30) * days;
     const annualTaxes = (numberValue(costs?.annualTaxes) / 365) * days;
+    const monthlyCosts =
+      numberValue(costs?.financing) +
+      numberValue(costs?.maintenance) +
+      numberValue(costs?.insurance) +
+      numberValue(costs?.otherMonthly) +
+      numberValue(costs?.emergencyFund) +
+      numberValue(costs?.leisure);
+    const fixedCosts30 = monthlyCosts + (numberValue(costs?.annualTaxes) / 365) * 30;
 
     const costItems: CostItem[] = [
       { key: "fuel", label: "Combustível", value: fuel, icon: <Fuel size={19} /> },
@@ -195,9 +224,19 @@ export function InsightsDashboard({ email }: { email: string }) {
 
     const workDays = settings?.work.workDays ?? [];
     const selectedWorkDays = workDays.filter(Boolean).length;
+    const configuredCycleWork = numberValue(settings?.work.cycleWorkDays);
+    const configuredCycleRest = numberValue(settings?.work.cycleRestDays);
+    const rotatingSchedule =
+      settings?.work.scheduleMode === "rotation" &&
+      configuredCycleWork > 0 &&
+      configuredCycleRest > 0;
+    const expectedDaysPerWeek = rotatingSchedule
+      ? (7 * configuredCycleWork) /
+        (configuredCycleWork + configuredCycleRest)
+      : selectedWorkDays;
     const dailyGoal =
-      selectedWorkDays > 0
-        ? numberValue(settings?.work.weeklyGoal) / selectedWorkDays
+      expectedDaysPerWeek > 0
+        ? numberValue(settings?.work.weeklyGoal) / expectedDaysPerWeek
         : 0;
     let goal = 0;
     const goalsByDate = new Map<string, number>();
@@ -205,12 +244,66 @@ export function InsightsDashboard({ email }: { email: string }) {
       const value = numberValue(log.goalAmount);
       if (value > 0) goalsByDate.set(log.date, value);
     });
-    for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-      const key = localDateKey(cursor);
-      const storedGoal = goalsByDate.get(key);
-      if (storedGoal !== undefined) goal += storedGoal;
-      else if (workDays[cursor.getDay()]) goal += dailyGoal;
+    if (rotatingSchedule) {
+      goal =
+        dailyGoal *
+        ((days * configuredCycleWork) /
+          (configuredCycleWork + configuredCycleRest));
+    } else {
+      for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+        const key = localDateKey(cursor);
+        const storedGoal = goalsByDate.get(key);
+        if (storedGoal !== undefined) goal += storedGoal;
+        else if (workDays[cursor.getDay()]) goal += dailyGoal;
+      }
     }
+
+    const historyRange = rangeFor("month");
+    const historyLogs = logs.filter((log) => {
+      const date = new Date(`${log.date}T12:00:00`);
+      return date >= historyRange.start && date <= historyRange.end;
+    });
+    const historyDates = new Set(historyLogs.map((log) => log.date));
+    const historicalFuel = historyLogs.reduce(
+      (total, log) => total + numberValue(log.fuelCost),
+      0
+    );
+    const averageFuel =
+      historyDates.size > 0 ? historicalFuel / historyDates.size : 0;
+
+    const scheduleMode = settings?.work.scheduleMode ?? "fixed";
+    const cycleWorkDays = configuredCycleWork;
+    const cycleRestDays = configuredCycleRest;
+    const validRotation =
+      scheduleMode === "rotation" && cycleWorkDays > 0 && cycleRestDays > 0;
+    const validFixed = scheduleMode === "fixed" && selectedWorkDays > 0;
+    const expectedWorkDays30 = validRotation
+      ? (30 * cycleWorkDays) / (cycleWorkDays + cycleRestDays)
+      : validFixed
+        ? countFixedWorkDays(workDays, 30)
+        : 0;
+    const expectedWorkDaysInPeriod = validRotation
+      ? (days * cycleWorkDays) / (cycleWorkDays + cycleRestDays)
+      : validFixed
+        ? countFixedWorkDays(workDays, days)
+        : 0;
+    const profileReady = fixedCosts30 > 0 && expectedWorkDays30 > 0;
+    const requiredAfterFuel =
+      profileReady ? fixedCosts30 / expectedWorkDays30 : 0;
+    const requiredGross =
+      historyDates.size > 0 ? requiredAfterFuel + averageFuel : 0;
+    const averageActualGross =
+      workedDates.size > 0 ? gross / workedDates.size : 0;
+    const dailyDifference =
+      requiredGross > 0 ? averageActualGross - requiredGross : 0;
+    const performanceRatio =
+      requiredGross > 0 ? averageActualGross / requiredGross : 0;
+    const projectionStatus: Projection["projectionStatus"] =
+      performanceRatio >= 1
+        ? "positive"
+        : performanceRatio >= 0.9
+          ? "warning"
+          : "negative";
 
     return {
       days,
@@ -227,6 +320,21 @@ export function InsightsDashboard({ email }: { email: string }) {
       goalProgress: goal > 0 ? Math.min((gross / goal) * 100, 100) : 0,
       costItems,
       hasJourneys: filtered.length > 0,
+      projection: {
+        profileReady,
+        hasFuelHistory: historyDates.size > 0,
+        historyDays: historyDates.size,
+        expectedWorkDays30,
+        requiredAfterFuel,
+        requiredGross,
+        averageFuel,
+        averageActualGross,
+        dailyDifference,
+        projectionStatus,
+        periodRequired:
+          requiredGross *
+          (period === "today" ? 1 : expectedWorkDaysInPeriod),
+      },
     };
   }, [logs, period, settings]);
 
@@ -332,6 +440,12 @@ export function InsightsDashboard({ email }: { email: string }) {
             </div>
           </div>
 
+          <ProjectionPanel
+            projection={report.projection}
+            period={period}
+            onOpenSettings={onOpenSettings}
+          />
+
           <div className="grid grid-cols-2 gap-3">
             <MetricCard
               icon={<Gauge size={19} />}
@@ -395,6 +509,173 @@ export function InsightsDashboard({ email }: { email: string }) {
         </>
       )}
     </section>
+  );
+}
+
+type Projection = {
+  profileReady: boolean;
+  hasFuelHistory: boolean;
+  historyDays: number;
+  expectedWorkDays30: number;
+  requiredAfterFuel: number;
+  requiredGross: number;
+  averageFuel: number;
+  averageActualGross: number;
+  dailyDifference: number;
+  projectionStatus: "positive" | "warning" | "negative";
+  periodRequired: number;
+};
+
+function ProjectionPanel({
+  projection,
+  period,
+  onOpenSettings,
+}: {
+  projection: Projection;
+  period: Period;
+  onOpenSettings: () => void;
+}) {
+  if (!projection.profileReady) {
+    return (
+      <div className="rounded-xl bg-slate-800 p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-400">
+            <Calculator size={20} />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white">
+              Mínimo para não trabalhar no prejuízo
+            </h2>
+            <p className="mt-1 text-sm leading-relaxed text-slate-400">
+              Complete seus custos e sua escala para calcular quanto precisa fazer.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="mt-4 min-h-11 w-full rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+        >
+          Completar perfil financeiro
+        </button>
+      </div>
+    );
+  }
+
+  if (!projection.hasFuelHistory) {
+    return (
+      <div className="rounded-xl bg-slate-800 p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-white">
+              Projeção aguardando combustível
+            </h2>
+            <p className="mt-1 text-sm leading-relaxed text-slate-400">
+              Encerre a primeira jornada para estimarmos o bruto necessário com
+              base no seu consumo real.
+            </p>
+          </div>
+        </div>
+        <p className="mt-4 rounded-lg bg-slate-900 p-3 text-sm text-slate-300">
+          Após combustível necessário:{" "}
+          <strong className="text-white">
+            {formatMoney(projection.requiredAfterFuel)}/dia
+          </strong>
+        </p>
+      </div>
+    );
+  }
+
+  const statusClass =
+    projection.projectionStatus === "positive"
+      ? "bg-emerald-500/10 text-emerald-300"
+      : projection.projectionStatus === "warning"
+        ? "bg-amber-500/10 text-amber-300"
+        : "bg-red-500/10 text-red-300";
+  const StatusIcon =
+    projection.projectionStatus === "positive" ? CircleCheck : AlertTriangle;
+  const periodLabel =
+    period === "today" ? "hoje" : period === "week" ? "em 7 dias" : "em 30 dias";
+
+  return (
+    <div className="rounded-xl bg-slate-800 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-bold text-white">
+            Mínimo para não trabalhar no prejuízo
+          </h2>
+          <p className="mt-1 text-[11px] text-slate-400">
+            {projection.historyDays < 7
+              ? `Estimativa inicial · ${projection.historyDays} dia${projection.historyDays === 1 ? "" : "s"} de histórico`
+              : "Baseado nos últimos 30 dias"}
+          </p>
+        </div>
+        <Calculator className="shrink-0 text-blue-400" size={21} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-slate-900 p-3">
+          <p className="text-[11px] leading-tight text-slate-400">
+            Após combustível necessário
+          </p>
+          <p className="mt-1 text-base font-black text-white">
+            {formatMoney(projection.requiredAfterFuel)}
+            <span className="text-xs font-semibold text-slate-400">/dia</span>
+          </p>
+        </div>
+        <div className="rounded-lg bg-blue-500/10 p-3">
+          <p className="text-[11px] leading-tight text-blue-200">
+            Bruto necessário estimado
+          </p>
+          <p className="mt-1 text-base font-black text-blue-400">
+            {formatMoney(projection.requiredGross)}
+            <span className="text-xs font-semibold text-blue-300">/dia</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2 border-t border-slate-700 pt-3 text-sm">
+        <ProjectionLine
+          label="Combustível médio"
+          value={`${formatMoney(projection.averageFuel)}/dia`}
+        />
+        <ProjectionLine
+          label="Sua média no período"
+          value={`${formatMoney(projection.averageActualGross)}/dia`}
+        />
+        <ProjectionLine
+          label={`Necessário ${periodLabel}`}
+          value={formatMoney(projection.periodRequired)}
+        />
+        <ProjectionLine
+          label="Dias previstos nos próximos 30"
+          value={projection.expectedWorkDays30.toLocaleString("pt-BR", {
+            maximumFractionDigits: 1,
+          })}
+        />
+      </div>
+
+      <div className={`mt-4 flex items-center gap-2 rounded-lg p-3 ${statusClass}`}>
+        <StatusIcon size={18} className="shrink-0" />
+        <p className="text-sm font-semibold">
+          {projection.dailyDifference >= 0
+            ? `${formatMoney(projection.dailyDifference)} acima do mínimo por dia`
+            : `${formatMoney(Math.abs(projection.dailyDifference))} abaixo do mínimo por dia`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ProjectionLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-slate-400">{label}</span>
+      <strong className="text-right text-slate-100">{value}</strong>
+    </div>
   );
 }
 

@@ -52,6 +52,7 @@ export function DriverDashboard() {
   const [journeyError, setJourneyError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsRevision, setSettingsRevision] = useState(0);
   const [tab, setTab] = useState<"painel" | "insights">("painel");
   const [showLogin, setShowLogin] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
@@ -91,16 +92,24 @@ export function DriverDashboard() {
     void fetchSettings().then((result) => {
       const work = result.settings?.work;
       const selectedDays = work?.workDays.filter(Boolean).length ?? 0;
+      const cycleWorkDays = Number(work?.cycleWorkDays) || 0;
+      const cycleRestDays = Number(work?.cycleRestDays) || 0;
+      const expectedDaysPerWeek =
+        work?.scheduleMode === "rotation" &&
+        cycleWorkDays > 0 &&
+        cycleRestDays > 0
+          ? (7 * cycleWorkDays) / (cycleWorkDays + cycleRestDays)
+          : selectedDays;
       const weeklyGoal = Number(work?.weeklyGoal) || 0;
-      if (selectedDays > 0 && weeklyGoal > 0) {
+      if (expectedDaysPerWeek > 0 && weeklyGoal > 0) {
         setState((previous) => ({
           ...previous,
-          goalAmount: String(weeklyGoal / selectedDays),
+          goalAmount: String(weeklyGoal / expectedDaysPerWeek),
         }));
       }
       window.localStorage.setItem("metadriver_goal_date", today);
     });
-  }, [hydrated, user]);
+  }, [hydrated, settingsRevision, user]);
 
   const workedMs = useMemo(
     () => effectiveWorkedMs(journey, now),
@@ -391,7 +400,11 @@ export function DriverDashboard() {
           </div>
         </div>
         {tab === "insights" && user ? (
-          <InsightsDashboard email={user.email} />
+          <InsightsDashboard
+            key={settingsRevision}
+            email={user.email}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
         ) : (
         <div>
           <Header gross={results.gross} net={results.netIncome} />
@@ -529,7 +542,14 @@ export function DriverDashboard() {
       </div>
 
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={() => {
+          window.localStorage.removeItem("metadriver_goal_date");
+          setSettingsRevision((revision) => revision + 1);
+        }}
+      />
 
       {showLogin && (
         <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setShowLogin(false); }}>

@@ -9,6 +9,9 @@ export type WorkSettings = {
   workDays: boolean[];
   hoursPerDay: string;
   weeklyGoal: string;
+  scheduleMode: "fixed" | "rotation";
+  cycleWorkDays: string;
+  cycleRestDays: string;
 };
 
 export type VehicleType = "car" | "motorcycle";
@@ -34,6 +37,9 @@ const DEFAULTS: AppSettings = {
     workDays: [false, true, true, true, true, true, false],
     hoursPerDay: "8",
     weeklyGoal: "",
+    scheduleMode: "fixed",
+    cycleWorkDays: "6",
+    cycleRestDays: "1",
   },
   vehicle: "car",
   costs: {
@@ -69,9 +75,11 @@ function SectionDivider({ label }: { label: string }) {
 export function SettingsPanel({
   open,
   onClose,
+  onSaved,
 }: {
   open: boolean;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULTS);
   const [tab, setTab] = useState<SettingsTab>("profile");
@@ -106,6 +114,7 @@ export function SettingsPanel({
     const res = await saveSettingsApi(settings);
     setLoading(false);
     if (res.ok) {
+      onSaved?.();
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
     }
@@ -115,6 +124,15 @@ export function SettingsPanel({
     const days = [...settings.work.workDays];
     days[idx] = !days[idx];
     update("work", { ...settings.work, workDays: days });
+  }
+
+  function setRotation(workDays: number, restDays: number) {
+    update("work", {
+      ...settings.work,
+      scheduleMode: "rotation",
+      cycleWorkDays: String(workDays),
+      cycleRestDays: String(restDays),
+    });
   }
 
   return (
@@ -177,27 +195,117 @@ export function SettingsPanel({
                   <>
                     <SectionDivider label="Trabalho" />
 
-                    <div className="mb-4">
-                      <label className="block text-[10px] text-slate-400 font-medium mb-2">
-                        Dias trabalhados por semana
-                      </label>
-                      <div className="flex gap-1.5">
-                        {DAY_LABELS.map((label, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => toggleDay(idx)}
-                            className={`flex-1 text-[10px] font-semibold py-2 rounded-lg transition-all ${
-                              settings.work.workDays[idx]
-                                ? "bg-blue-600 text-white shadow-sm"
-                                : "bg-slate-800 text-slate-500 hover:text-slate-300 hover:bg-slate-700"
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-950/60 p-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          update("work", { ...settings.work, scheduleMode: "fixed" })
+                        }
+                        className={`min-h-11 rounded-lg px-2 text-[11px] font-semibold transition-colors ${
+                          settings.work.scheduleMode === "fixed"
+                            ? "bg-blue-600 text-white"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                        }`}
+                      >
+                        Dias fixos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          update("work", { ...settings.work, scheduleMode: "rotation" })
+                        }
+                        className={`min-h-11 rounded-lg px-2 text-[11px] font-semibold transition-colors ${
+                          settings.work.scheduleMode === "rotation"
+                            ? "bg-blue-600 text-white"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                        }`}
+                      >
+                        Escala rotativa
+                      </button>
                     </div>
+
+                    {settings.work.scheduleMode === "fixed" ? (
+                      <div className="mb-4">
+                        <label className="mb-2 block text-[10px] font-medium text-slate-400">
+                          Dias trabalhados por semana
+                        </label>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {DAY_LABELS.map((label, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => toggleDay(idx)}
+                              className={`min-h-11 rounded-lg text-[10px] font-semibold transition-colors ${
+                                settings.work.workDays[idx]
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mb-4">
+                        <label className="mb-2 block text-[10px] font-medium text-slate-400">
+                          Escolha uma escala
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { work: 6, rest: 1 },
+                            { work: 5, rest: 2 },
+                            { work: 4, rest: 1 },
+                          ].map((preset) => {
+                            const selected =
+                              settings.work.cycleWorkDays === String(preset.work) &&
+                              settings.work.cycleRestDays === String(preset.rest);
+                            return (
+                              <button
+                                key={`${preset.work}x${preset.rest}`}
+                                type="button"
+                                onClick={() => setRotation(preset.work, preset.rest)}
+                                className={`min-h-11 rounded-lg text-xs font-bold transition-colors ${
+                                  selected
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                                }`}
+                              >
+                                {preset.work}×{preset.rest}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="mb-2 mt-3 text-[10px] text-slate-400">
+                          Personalizada
+                        </p>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+                          <ConfigField
+                            label="Dias trabalhando"
+                            value={settings.work.cycleWorkDays}
+                            onChange={(value) =>
+                              update("work", {
+                                ...settings.work,
+                                cycleWorkDays: value,
+                              })
+                            }
+                            placeholder="4"
+                          />
+                          <span className="pb-2.5 text-sm font-bold text-slate-500">×</span>
+                          <ConfigField
+                            label="Dias de folga"
+                            value={settings.work.cycleRestDays}
+                            onChange={(value) =>
+                              update("work", {
+                                ...settings.work,
+                                cycleRestDays: value,
+                              })
+                            }
+                            placeholder="1"
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-3">
                       <ConfigField

@@ -7,6 +7,9 @@
 # testing
 /coverage
 
+# local project documentation
+/docs/
+
 # next.js
 /.next/
 /.next-dev/

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { db } from "@/db";
 import { dailyLogs } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 
 async function getUser(request: NextRequest) {
   const token = request.cookies.get("session")?.value;
@@ -57,4 +57,62 @@ export async function POST(request: NextRequest) {
     .returning();
 
   return NextResponse.json({ log: r });
+}
+
+export async function PATCH(request: NextRequest) {
+  const user = await getUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const id = Number(body.id);
+  const fields = [
+    "goalAmount",
+    "kmDriven",
+    "fuelCost",
+    "otherExpenses",
+    "grossEarnings",
+    "workedMs",
+  ] as const;
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return NextResponse.json({ error: "Registro inválido." }, { status: 400 });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.date ?? ""))) {
+    return NextResponse.json({ error: "Informe uma data válida." }, { status: 400 });
+  }
+
+  for (const field of fields) {
+    const value = Number(body[field]);
+    if (!Number.isFinite(value) || value < 0) {
+      return NextResponse.json(
+        { error: "Os valores não podem ser negativos." },
+        { status: 400 }
+      );
+    }
+  }
+
+  const [updated] = await db
+    .update(dailyLogs)
+    .set({
+      date: body.date,
+      goalAmount: String(body.goalAmount),
+      kmDriven: String(body.kmDriven),
+      fuelCost: String(body.fuelCost),
+      otherExpenses: String(body.otherExpenses),
+      grossEarnings: String(body.grossEarnings),
+      workedMs: String(Math.round(Number(body.workedMs))),
+    })
+    .where(and(eq(dailyLogs.id, id), eq(dailyLogs.userEmail, user.email)))
+    .returning();
+
+  if (!updated) {
+    return NextResponse.json(
+      { error: "Jornada não encontrada." },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json({ log: updated });
 }

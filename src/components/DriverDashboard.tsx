@@ -14,6 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { HelpModal } from "./HelpModal";
 import { ShareButton } from "./ShareButton";
 import { InsightsDashboard } from "./InsightsDashboard";
+import { JourneyHistory } from "./JourneyHistory";
 import { SettingsPanel } from "./SettingsPanel";
 import { JourneyControl } from "./JourneyControl";
 import {
@@ -53,7 +54,7 @@ export function DriverDashboard() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsRevision, setSettingsRevision] = useState(0);
-  const [tab, setTab] = useState<"painel" | "insights">("painel");
+  const [tab, setTab] = useState<"painel" | "insights" | "historico">("painel");
   const [showLogin, setShowLogin] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -355,6 +356,13 @@ export function DriverDashboard() {
               >
                 <i className="fas fa-chart-line mr-1" /> Dashboard
               </button>
+              <button
+                onClick={() => setTab("historico")}
+                className={`text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md transition-all ${tab === "historico" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}
+                type="button"
+              >
+                <i className="fas fa-clock-rotate-left mr-1" /> Histórico
+              </button>
             </div>
           ) : (
             <div />
@@ -405,6 +413,8 @@ export function DriverDashboard() {
             email={user.email}
             onOpenSettings={() => setSettingsOpen(true)}
           />
+        ) : tab === "historico" && user ? (
+          <JourneyHistory email={user.email} />
         ) : (
         <div>
           <Header gross={results.gross} net={results.netIncome} />

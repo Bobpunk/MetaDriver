@@ -41,3 +41,32 @@ export async function saveLog(
     return { ok: false, error: "Erro de conexão." };
   }
 }
+
+export async function updateLog(
+  log: Pick<
+    DailyLog,
+    | "id"
+    | "date"
+    | "goalAmount"
+    | "kmDriven"
+    | "fuelCost"
+    | "otherExpenses"
+    | "grossEarnings"
+    | "workedMs"
+  >
+): Promise<{ ok: boolean; log?: DailyLog; error?: string }> {
+  try {
+    const res = await fetch("/api/daily-logs", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(log),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { ok: false, error: data.error || "Erro ao atualizar" };
+    }
+    return { ok: true, log: data.log };
+  } catch {
+    return { ok: false, error: "Erro de conexão." };
+  }
+}

@@ -26,6 +26,10 @@ import { fetchLogs } from "@/lib/daily-logs";
 import { formatMoney } from "@/lib/driver";
 import type { DailyLog } from "@/lib/types";
 import { fetchSettings } from "@/lib/user-settings";
+import {
+  calculateFuelProjection,
+  calculateWorkedCostPerKm,
+} from "@/lib/insights";
 import type { AppSettings } from "./SettingsPanel";
 
 type Period = "today" | "week" | "month";
@@ -163,6 +167,13 @@ export function InsightsDashboard({
       numberValue(costs?.emergencyFund) +
       numberValue(costs?.leisure);
     const fixedCosts30 = monthlyCosts + (numberValue(costs?.annualTaxes) / 365) * 30;
+    const costPerWorkedKm = calculateWorkedCostPerKm(
+      fuel + journeyExpenses,
+      monthlyCosts,
+      numberValue(costs?.annualTaxes),
+      workedDates.size,
+      km
+    );
 
     const costItems: CostItem[] = [
       { key: "fuel", label: "Combustível", value: fuel, icon: <Fuel size={19} /> },
@@ -270,6 +281,11 @@ export function InsightsDashboard({
     );
     const averageFuel =
       historyDates.size > 0 ? historicalFuel / historyDates.size : 0;
+    const fuelProjection = calculateFuelProjection(
+      historicalFuel,
+      historyDates.size,
+      days
+    );
 
     const scheduleMode = settings?.work.scheduleMode ?? "fixed";
     const cycleWorkDays = configuredCycleWork;
@@ -309,11 +325,12 @@ export function InsightsDashboard({
       days,
       gross,
       fuel,
+      fuelProjection,
       km,
       workedMs,
       hourlyGross: workedHours > 0 ? gross / workedHours : 0,
       grossPerKm: km > 0 ? gross / km : 0,
-      costPerKm: km > 0 ? totalCosts / km : 0,
+      costPerKm: costPerWorkedKm,
       totalCosts,
       balance,
       goal,
@@ -464,7 +481,7 @@ export function InsightsDashboard({
             />
             <MetricCard
               icon={<Fuel size={19} />}
-              label="Custo por km"
+              label="Custo por km trabalhado"
               value={`${formatMoney(report.costPerKm)}/km`}
               cost
             />
@@ -477,6 +494,16 @@ export function InsightsDashboard({
               icon={<Fuel size={19} />}
               label="Combustível"
               value={formatMoney(report.fuel)}
+              note={
+                report.fuelProjection === null
+                  ? "(proj. —)"
+                  : `(proj. ${formatMoney(report.fuelProjection)})`
+              }
+              ariaLabel={
+                report.fuelProjection === null
+                  ? `Combustível real ${formatMoney(report.fuel)}. Sem histórico suficiente para projeção.`
+                  : `Combustível real ${formatMoney(report.fuel)}. Projeção para ${report.days} ${report.days === 1 ? "dia" : "dias"}: ${formatMoney(report.fuelProjection)}.`
+              }
               cost
             />
           </div>
@@ -708,15 +735,22 @@ function MetricCard({
   icon,
   label,
   value,
+  note,
+  ariaLabel,
   cost = false,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
+  note?: string;
+  ariaLabel?: string;
   cost?: boolean;
 }) {
   return (
-    <div className="flex min-h-24 items-center gap-3 rounded-xl bg-slate-800 p-3 shadow-sm">
+    <div
+      className="flex min-h-24 items-center gap-3 rounded-xl bg-slate-800 p-3 shadow-sm"
+      aria-label={ariaLabel}
+    >
       <div
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
           cost ? "bg-red-500/15 text-red-400" : "bg-blue-500/15 text-blue-400"
@@ -727,6 +761,11 @@ function MetricCard({
       <div className="min-w-0">
         <p className="text-[11px] leading-tight text-slate-400">{label}</p>
         <p className="mt-1 break-words text-sm font-bold leading-tight text-white">{value}</p>
+        {note && (
+          <p className="mt-1 text-[10px] font-semibold leading-tight text-slate-400">
+            {note}
+          </p>
+        )}
       </div>
     </div>
   );

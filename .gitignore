@@ -31,6 +31,9 @@ yarn-error.log*
 # generated codebase analysis
 /repomix-output.xml
 
+# local database inspection scripts
+/check_pro.mjs
+
 # env files
 .env*
 !.env.example

@@ -519,7 +519,14 @@ export function InsightsDashboard({
             </div>
             <div className="space-y-4">
               {report.costItems.map((item) => (
-                <CostRow key={item.key} item={item} total={report.totalCosts} />
+                <CostRow
+                  key={item.key}
+                  item={item}
+                  total={report.totalCosts}
+                  projectedValue={
+                    item.key === "fuel" ? report.fuelProjection : undefined
+                  }
+                />
               ))}
             </div>
           </div>
@@ -771,7 +778,15 @@ function MetricCard({
   );
 }
 
-function CostRow({ item, total }: { item: CostItem; total: number }) {
+function CostRow({
+  item,
+  total,
+  projectedValue,
+}: {
+  item: CostItem;
+  total: number;
+  projectedValue?: number | null;
+}) {
   const pct = percentage(item.value, total);
   return (
     <div className="flex gap-3">
@@ -781,7 +796,27 @@ function CostRow({ item, total }: { item: CostItem; total: number }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <span className="truncate text-sm font-semibold text-slate-100">{item.label}</span>
-          <span className="shrink-0 text-sm font-bold text-white">{formatMoney(item.value)}</span>
+          <span className="flex shrink-0 flex-wrap items-baseline justify-end gap-x-1 text-right">
+            <span className="text-sm font-bold text-white">
+              {formatMoney(item.value)}
+            </span>
+            {projectedValue !== undefined && (
+              <span
+                className="text-[10px] font-semibold text-emerald-400"
+                aria-label={
+                  projectedValue === null
+                    ? "Sem histórico suficiente para projeção"
+                    : `Projeção ${formatMoney(projectedValue)}`
+                }
+              >
+                (proj.{" "}
+                {projectedValue === null
+                  ? "—"
+                  : formatMoney(projectedValue)}
+                )
+              </span>
+            )}
+          </span>
         </div>
         <div className="mt-2 flex items-center gap-2">
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-700">
